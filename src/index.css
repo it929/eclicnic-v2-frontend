@@ -1,0 +1,140 @@
+/* Custom overrides & enhancements for SB Admin 2 */
+body {
+  margin: 0;
+  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #858796;
+  text-align: left;
+  background-color: #f8f9fc;
+}
+
+#wrapper {
+  display: flex;
+  min-height: 100vh;
+}
+
+#content-wrapper {
+  background-color: #f8f9fc;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.sidebar .nav-item .collapse-inner {
+  padding: 0.5rem 0;
+  min-width: 10rem;
+  font-size: 0.85rem;
+  margin: 0 1rem;
+}
+
+.sidebar .nav-item .collapse-inner .collapse-item {
+  padding: 0.5rem 1rem;
+  margin: 0 0.5rem;
+  display: block;
+  color: #3a3b45;
+  text-decoration: none;
+  border-radius: 0.35rem;
+  white-space: nowrap;
+}
+
+.sidebar .nav-item .collapse-inner .collapse-item:hover {
+  background-color: #eaecf4;
+}
+
+.sidebar-brand-icon {
+  font-size: 1.5rem;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.topbar .nav-item .nav-link .img-profile {
+  height: 2rem;
+  width: 2rem;
+}
+
+.border-left-primary {
+  border-left: 0.25rem solid #4e73df !important;
+}
+
+.border-left-success {
+  border-left: 0.25rem solid #1cc88a !important;
+}
+
+.border-left-info {
+  border-left: 0.25rem solid #36b9cc !important;
+}
+
+.border-left-warning {
+  border-left: 0.25rem solid #f6c23e !important;
+}
+
+.border-left-danger {
+  border-left: 0.25rem solid #e74a3b !important;
+}
+
+/* Modal backdrop in pure React */
+.modal-backdrop-custom {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1040;
+}
+
+.modal-custom {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1050;
+  max-width: 650px;
+  width: 95%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Clean dashboard helper styles */
+.stat-card-hover {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.stat-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.08) !important;
+}
+
+.hospital-badge {
+  font-family: Consolas, 'Liberation Mono', Menlo, monospace;
+  font-weight: 700;
+  font-size: 0.8rem;
+  background-color: #f8f9fc;
+  border: 1px solid #eaecf4;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  color: #4e73df;
+}
+
+.avatar-initials {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: #ffffff;
+  background: linear-gradient(135deg, #4e73df, #224abe);
+  flex-shrink: 0;
+}
+
+.badge-category-hmo { background-color: #e8f4fd; color: #2e59d9; border: 1px solid #d1e7fd; }
+.badge-category-private { background-color: #f0f2fa; color: #4e73df; border: 1px solid #d1d3e2; }
+.badge-category-anc { background-color: #fdf2f4; color: #e74a3b; border: 1px solid #f9d6db; }
+.badge-category-retainer { background-color: #fef9e7; color: #d39e00; border: 1px solid #fceec5; }
+
+
