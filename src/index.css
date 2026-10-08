@@ -137,4 +137,130 @@ body {
 .badge-category-anc { background-color: #fdf2f4; color: #e74a3b; border: 1px solid #f9d6db; }
 .badge-category-retainer { background-color: #fef9e7; color: #d39e00; border: 1px solid #fceec5; }
 
+/* ========================================================
+   Polished Patient Registration Modal (SB Admin 2 Native)
+   ======================================================== */
+.patient-modal-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1050;
+  width: 95%;
+  max-width: 820px;
+  max-height: 90vh;
+  display: flex !important;
+  flex-direction: column !important;
+  border: none !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.28) !important;
+  overflow: hidden !important;
+  background-color: #ffffff;
+  animation: modalDialogFadeIn 0.2s ease-out;
+}
+
+@keyframes modalDialogFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.patient-modal-form {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  margin: 0;
+}
+
+.patient-modal-body-scroll {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  padding: 1.25rem 1.5rem !important;
+  background-color: #f8f9fc !important;
+}
+
+.patient-modal-footer {
+  flex-shrink: 0 !important;
+  background-color: #ffffff !important;
+  border-top: 1px solid #e3e6f0 !important;
+  padding: 0.85rem 1.5rem !important;
+}
+
+.patient-tab-pills .nav-link {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.4rem 0.9rem;
+  border-radius: 0.35rem;
+  color: #5a5c69;
+  background-color: #ffffff;
+  border: 1px solid #e3e6f0;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.patient-tab-pills .nav-link:hover {
+  background-color: #eaecf4;
+  color: #2e59d9;
+}
+
+.patient-tab-pills .nav-link.active {
+  background-color: #4e73df !important;
+  color: #ffffff !important;
+  border-color: #4e73df !important;
+  box-shadow: 0 0.125rem 0.25rem rgba(78, 115, 223, 0.25);
+}
+
+.patient-allergy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: 50rem;
+  border: 1px solid #d1d3e2;
+  background-color: #ffffff;
+  color: #5a5c69;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  outline: none !important;
+  user-select: none;
+}
+
+.patient-allergy-chip:hover {
+  background-color: #eaecf4;
+  color: #3a3b45;
+  border-color: #bac8f3;
+}
+
+.patient-allergy-chip.selected {
+  background-color: #e74a3b !important;
+  border-color: #e74a3b !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.patient-allergy-chip.selected-nkda {
+  background-color: #1cc88a !important;
+  border-color: #1cc88a !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.patient-input-group .input-group-text {
+  background-color: #eaecf4;
+  border-color: #d1d3e2;
+  color: #6e707e;
+  font-size: 0.8rem;
+}
+
+
+
 
