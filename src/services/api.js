@@ -130,11 +130,72 @@ export const api = {
     return res.data?.results || res.data;
   },
 
-  async getPlans(categoryId = null) {
-    const res = await client.get('/patient-plans/', {
-      params: categoryId ? { category: categoryId } : {},
+  // Sponsors & HMOs (e.g. AIICO, AVON HMO, RELIANCE, etc.)
+  async getSponsors(params = null) {
+    const queryParams = typeof params === 'object' && params !== null
+      ? params
+      : (params ? { category: params } : {});
+    const res = await client.get('/sponsors/', {
+      params: queryParams,
     });
     return res.data?.results || res.data;
+  },
+
+  async createSponsor(sponsorData) {
+    const res = await client.post('/sponsors/', sponsorData);
+    return res.data;
+  },
+
+  async updateSponsor(id, sponsorData) {
+    const res = await client.put(`/sponsors/${id}/`, sponsorData);
+    return res.data;
+  },
+
+  async deleteSponsor(id) {
+    const res = await client.delete(`/sponsors/${id}/`);
+    return res.data;
+  },
+
+  async importSponsors(formData = null) {
+    const res = await client.post('/sponsors/import-sponsors/', formData || {}, {
+      headers: formData ? { 'Content-Type': 'multipart/form-data' } : {},
+    });
+    return res.data;
+  },
+
+  // Plans under Sponsors (e.g. Bronze, Silver, Gold, Platinum under a Sponsor)
+  async getPlans(params = null) {
+    let queryParams = {};
+    if (typeof params === 'object' && params !== null) {
+      queryParams = params;
+    } else if (params) {
+      // If a numeric ID or string is passed, check if it's sponsor or category
+      queryParams = { sponsor: params };
+    }
+    const res = await client.get('/patient-plans/', {
+      params: queryParams,
+    });
+    return res.data?.results || res.data;
+  },
+
+  async createPlan(planData) {
+    const res = await client.post('/patient-plans/', planData);
+    return res.data;
+  },
+
+  async updatePlan(id, planData) {
+    const res = await client.put(`/patient-plans/${id}/`, planData);
+    return res.data;
+  },
+
+  async deletePlan(id) {
+    const res = await client.delete(`/patient-plans/${id}/`);
+    return res.data;
+  },
+
+  async createCategory(categoryData) {
+    const res = await client.post('/patient-categories/', categoryData);
+    return res.data;
   },
 
   // ==========================================

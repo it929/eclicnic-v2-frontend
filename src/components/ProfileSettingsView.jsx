@@ -163,9 +163,9 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
                 style={{ width: '110px', height: '110px' }}
               />
               <h4 className="font-weight-bold text-gray-800 mb-1">
-                {profile?.fullname || 'Tunde Laoye'}
+                {profile?.fullname || profile?.username || 'User'}
               </h4>
-              <p className="text-muted small mb-2">@{profile?.username || '1638'}</p>
+              <p className="text-muted small mb-2">@{profile?.username || 'user'}</p>
               <div className="mb-3">
                 <span className="badge badge-primary px-3 py-1 mr-1" style={{ fontSize: '0.8rem' }}>
                   {profile?.department_name || 'Admin'}
@@ -180,15 +180,15 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
               <div className="text-left small">
                 <div className="mb-2">
                   <i className="fas fa-envelope text-primary mr-2"></i>
-                  <strong>Email:</strong> {profile?.email || 'laoye@gmail.com'}
+                  <strong>Email:</strong> {profile?.email || 'N/A'}
                 </div>
                 <div className="mb-2">
                   <i className="fas fa-phone text-success mr-2"></i>
-                  <strong>Phone:</strong> {profile?.phone_number || '08122345673'}
+                  <strong>Phone:</strong> {profile?.phone_number || 'N/A'}
                 </div>
                 <div className="mb-2">
                   <i className="fas fa-venus-mars text-info mr-2"></i>
-                  <strong>Gender:</strong> {profile?.gender || 'Male'}
+                  <strong>Gender:</strong> {profile?.gender || 'N/A'}
                 </div>
                 <div className="mb-2">
                   <i className="fas fa-key text-warning mr-2"></i>
@@ -251,11 +251,11 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
                       <tbody>
                         <tr>
                           <th className="bg-light" style={{ width: '35%' }}>Staff Username / ID</th>
-                          <td className="font-weight-bold text-danger">{profile?.username || '1638'}</td>
+                          <td className="font-weight-bold text-danger">{profile?.username || 'N/A'}</td>
                         </tr>
                         <tr>
                           <th className="bg-light">Full Name</th>
-                          <td className="font-weight-bold">{profile?.fullname || 'Tunde Laoye'}</td>
+                          <td className="font-weight-bold">{profile?.fullname || profile?.username || 'N/A'}</td>
                         </tr>
                         <tr>
                           <th className="bg-light">Department</th>
@@ -265,11 +265,11 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
                         </tr>
                         <tr>
                           <th className="bg-light">Official Email</th>
-                          <td>{profile?.email || 'laoye@gmail.com'}</td>
+                          <td>{profile?.email || 'N/A'}</td>
                         </tr>
                         <tr>
                           <th className="bg-light">Phone Number</th>
-                          <td>{profile?.phone_number || '08122345673'}</td>
+                          <td>{profile?.phone_number || 'N/A'}</td>
                         </tr>
                         <tr>
                           <th className="bg-light">Date of Birth</th>

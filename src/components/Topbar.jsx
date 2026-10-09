@@ -318,7 +318,7 @@ export default function Topbar({
                 className="font-weight-bold text-gray-800"
                 style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}
               >
-                {user?.fullname || 'Tunde Laoye'}
+                {user?.fullname || user?.username || 'User'}
               </span>
               <span className="mt-0.5">
                 <span
@@ -385,9 +385,9 @@ export default function Topbar({
                 className="px-3 py-2.5 border-bottom"
                 style={{ backgroundColor: '#f8fafc', borderTopLeftRadius: '10px', borderTopRightRadius: '10px' }}
               >
-                <div className="font-weight-bold text-gray-800 small">{user?.fullname || 'Tunde Laoye'}</div>
+                <div className="font-weight-bold text-gray-800 small">{user?.fullname || user?.username || 'User'}</div>
                 <div className="text-muted" style={{ fontSize: '0.72rem' }}>
-                  @{user?.username || '1638'} &bull; {user?.department_name || currentRole}
+                  @{user?.username || 'user'} &bull; {user?.department_name || currentRole}
                 </div>
               </div>
               <a

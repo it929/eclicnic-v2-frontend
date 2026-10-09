@@ -496,6 +496,7 @@ export default function App() {
         onClose={() => setIsNewPatientModalOpen(false)}
         onPatientCreated={handlePatientCreated}
         categories={categories}
+        isSidebarCollapsed={isSidebarCollapsed}
       />
 
       <PatientDetailModal
