@@ -462,6 +462,22 @@ export default function Sidebar({
             </a>
             {openSubmenu === 'manageTariffs' && (
               <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
+                {/* Sponsors */}
+                <a
+                  className="collapse-item cursor-pointer text-primary font-weight-bold mb-1"
+                  onClick={() => setActiveTab('tariffs', 'sponsors', 'manage_sponsors')}
+                >
+                  <i className="fas fa-building mr-1"></i> Sponsors
+                </a>
+
+                {/* Plans */}
+                <a
+                  className="collapse-item cursor-pointer text-primary font-weight-bold mb-1"
+                  onClick={() => setActiveTab('tariffs', 'plans', 'manage_plans')}
+                >
+                  <i className="fas fa-layer-group mr-1"></i> Plans
+                </a>
+
                 {/* Service Tariffs */}
                 <a
                   className="collapse-item cursor-pointer d-flex justify-content-between align-items-center text-info font-weight-bold"
@@ -681,6 +697,18 @@ export default function Sidebar({
                     onClick={() => setActiveTab('patients')}
                   >
                     <i className="fas fa-calendar-day mr-1"></i> Registered Today
+                  </a>
+                  <a
+                    className="collapse-item cursor-pointer text-primary font-weight-bold"
+                    onClick={() => setActiveTab('tariffs', 'sponsors', 'manage_sponsors')}
+                  >
+                    <i className="fas fa-building mr-1"></i> Sponsors
+                  </a>
+                  <a
+                    className="collapse-item cursor-pointer text-primary font-weight-bold"
+                    onClick={() => setActiveTab('tariffs', 'plans', 'manage_plans')}
+                  >
+                    <i className="fas fa-layer-group mr-1"></i> Plans
                   </a>
                 </div>
               )}

@@ -30,6 +30,38 @@ export default function TariffPlansView({
   const [packageItems, setPackageItems] = useState([]);
   const [immunizations, setImmunizations] = useState([]);
 
+  // Sponsors & HMO Plans state
+  const [sponsors, setSponsors] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [sponsorCategoryFilter, setSponsorCategoryFilter] = useState('');
+  const [sponsorModalOpen, setSponsorModalOpen] = useState(false);
+  const [editingSponsor, setEditingSponsor] = useState(null);
+  const [sponsorForm, setSponsorForm] = useState({ name: '', code: '', category: '' });
+  const [importingSponsors, setImportingSponsors] = useState(false);
+  const [sponsorSaving, setSponsorSaving] = useState(false);
+
+  // Plans under Sponsors state
+  const [plans, setPlans] = useState([]);
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [planForm, setPlanForm] = useState({ plan: '', code: '', sponsor: '', category: '' });
+  const [planSaving, setPlanSaving] = useState(false);
+  const [selectedPlanSponsorFilter, setSelectedPlanSponsorFilter] = useState('');
+  const [planCategoryFilter, setPlanCategoryFilter] = useState('');
+
+  // Professional Delete Dialog State
+  const [deleteDialog, setDeleteDialog] = useState({
+    isOpen: false,
+    type: '',
+    id: null,
+    name: '',
+    title: '',
+    message: '',
+    loading: false,
+  });
+
+  const [syncExcelModalOpen, setSyncExcelModalOpen] = useState(false);
+
   // Generic Edit/Create Modal state
   const [modalState, setModalState] = useState({
     open: false,
@@ -160,10 +192,50 @@ export default function TariffPlansView({
     }
   };
 
+  const loadSponsors = async () => {
+    try {
+      setLoading(true);
+      const [sponsorsRes, catsRes] = await Promise.all([
+        api.getSponsors(),
+        api.getCategories(),
+      ]);
+      setSponsors(Array.isArray(sponsorsRes) ? sponsorsRes : []);
+      setCategories(Array.isArray(catsRes) ? catsRes : []);
+    } catch (err) {
+      console.error(err);
+      showAlert('Failed to load sponsors.', 'danger');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadPlans = async () => {
+    try {
+      setLoading(true);
+      const [plansRes, sponsorsRes, catsRes] = await Promise.all([
+        api.getPlans(),
+        api.getSponsors(),
+        api.getCategories(),
+      ]);
+      setPlans(Array.isArray(plansRes) ? plansRes : []);
+      setSponsors(Array.isArray(sponsorsRes) ? sponsorsRes : []);
+      setCategories(Array.isArray(catsRes) ? catsRes : []);
+    } catch (err) {
+      console.error(err);
+      showAlert('Failed to load plans.', 'danger');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Reload current data whenever active submodule/sub-submodule changes
   useEffect(() => {
     setSearchTerm('');
-    if (activeSubmodule === 'service') {
+    if (activeSubmodule === 'sponsors') {
+      loadSponsors();
+    } else if (activeSubmodule === 'plans') {
+      loadPlans();
+    } else if (activeSubmodule === 'service') {
       if (activeSubSubmodule === 'reg_fees') loadRegFees();
       else if (activeSubSubmodule === 'lab_charges') loadLabCharges();
       else if (activeSubSubmodule === 'radiology_charges') loadRadiologyCharges();
@@ -190,7 +262,11 @@ export default function TariffPlansView({
 
   // Refresh current view button handler
   const handleRefresh = () => {
-    if (activeSubmodule === 'service') {
+    if (activeSubmodule === 'sponsors') {
+      loadSponsors();
+    } else if (activeSubmodule === 'plans') {
+      loadPlans();
+    } else if (activeSubmodule === 'service') {
       if (activeSubSubmodule === 'reg_fees') loadRegFees();
       else if (activeSubSubmodule === 'lab_charges') loadLabCharges();
       else if (activeSubSubmodule === 'radiology_charges') loadRadiologyCharges();
@@ -208,6 +284,252 @@ export default function TariffPlansView({
       }
     }
   };
+
+  // ========================================================
+  // Sponsor Modal Handlers (Create & Edit & Import)
+  // ========================================================
+  const openSponsorModal = (mode, item = null) => {
+    if (mode === 'edit' && item) {
+      setEditingSponsor(item);
+      setSponsorForm({
+        name: item.name || item.plan || '',
+        code: item.code || '',
+        category: item.category || '',
+      });
+    } else {
+      setEditingSponsor(null);
+      const hmoCat = categories.find((c) => c.category?.toLowerCase() === 'hmo');
+      setSponsorForm({
+        name: '',
+        code: '',
+        category: hmoCat ? hmoCat.id : (categories[0]?.id || ''),
+      });
+    }
+    setSponsorModalOpen(true);
+  };
+
+  const closeSponsorModal = () => {
+    setSponsorModalOpen(false);
+    setEditingSponsor(null);
+  };
+
+  const handleSaveSponsor = async (e) => {
+    e.preventDefault();
+    if (!sponsorForm.name.trim()) {
+      showAlert('Sponsor Name is required.', 'warning');
+      return;
+    }
+    try {
+      setSponsorSaving(true);
+      const payload = {
+        name: sponsorForm.name.trim(),
+        code: sponsorForm.code ? sponsorForm.code.trim().toUpperCase() : '',
+        category: sponsorForm.category ? Number(sponsorForm.category) : null,
+      };
+      if (editingSponsor) {
+        await api.updateSponsor(editingSponsor.id, payload);
+        showAlert(`Sponsor "${payload.name}" updated successfully.`);
+      } else {
+        await api.createSponsor(payload);
+        showAlert(`Sponsor "${payload.name}" (${payload.code || 'No code'}) created successfully.`);
+      }
+      closeSponsorModal();
+      loadSponsors();
+    } catch (err) {
+      console.error(err);
+      showAlert(err.response?.data?.detail || 'Failed to save sponsor.', 'danger');
+    } finally {
+      setSponsorSaving(false);
+    }
+  };
+
+  // ========================================================
+  // Professional Delete & Confirmation Handlers
+  // ========================================================
+  const confirmDelete = (type, id, name) => {
+    let typeLabel = 'Item';
+    if (type === 'sponsor') typeLabel = 'Sponsor';
+    else if (type === 'plan') typeLabel = 'Tariff Plan';
+    else if (type === 'reg_fee') typeLabel = 'Registration Fee';
+    else if (type === 'lab') typeLabel = 'Laboratory Test Charge';
+    else if (type === 'radiology') typeLabel = 'Radiology Test Charge';
+    else if (type === 'ward') typeLabel = 'Admission / Ward Fee';
+    else if (type === 'other') typeLabel = 'Hospital Service';
+    else if (type === 'medication') typeLabel = 'Medication Fee';
+    else if (type === 'package') typeLabel = 'Care Package';
+    else if (type === 'package_item') typeLabel = 'Package Item';
+
+    setDeleteDialog({
+      isOpen: true,
+      type,
+      id,
+      name,
+      title: `Delete ${typeLabel}`,
+      message: `Are you sure you want to permanently delete "${name}"?`,
+      loading: false,
+    });
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleteDialog.loading) return;
+    setDeleteDialog({
+      isOpen: false,
+      type: '',
+      id: null,
+      name: '',
+      title: '',
+      message: '',
+      loading: false,
+    });
+  };
+
+  const handleExecuteDelete = async () => {
+    const { type, id, name } = deleteDialog;
+    try {
+      setDeleteDialog((prev) => ({ ...prev, loading: true }));
+      if (type === 'sponsor') {
+        await api.deleteSponsor(id);
+        showAlert(`Sponsor "${name}" removed successfully.`);
+        loadSponsors();
+      } else if (type === 'plan') {
+        await api.deletePlan(id);
+        showAlert(`Plan "${name}" removed successfully.`);
+        loadPlans();
+      } else if (type === 'reg_fee') {
+        const res = await api.deleteRegistrationFee(id);
+        showAlert(res.detail || 'Plan deleted.');
+        loadRegFees();
+      } else if (type === 'lab') {
+        const res = await api.deleteLabCharge(id);
+        showAlert(res.detail || 'Lab test charge deleted.');
+        loadLabCharges();
+      } else if (type === 'radiology') {
+        const res = await api.deleteRadiologyCharge(id);
+        showAlert(res.detail || 'Radiology test charge deleted.');
+        loadRadiologyCharges();
+      } else if (type === 'ward') {
+        const res = await api.deleteAdmissionFee(id);
+        showAlert(res.detail || 'Ward fee deleted.');
+        loadAdmissionFees();
+      } else if (type === 'other') {
+        const res = await api.deleteOtherService(id);
+        showAlert(res.detail || 'Service deleted.');
+        loadOtherServices();
+      } else if (type === 'medication') {
+        const res = await api.deleteMedicationFee(id);
+        showAlert(res.detail || 'Medication tariff deleted.');
+        loadMedicationFees();
+      } else if (type === 'package') {
+        const res = await api.deletePackage(id);
+        showAlert(res.detail || 'Package deleted.');
+        loadPackages();
+      } else if (type === 'package_item') {
+        const res = await api.deletePackageData(id);
+        showAlert(res.detail || 'Package item deleted.');
+        loadPackageData(selectedPackageId);
+      }
+      closeDeleteDialog();
+    } catch (err) {
+      console.error(err);
+      showAlert(err.response?.data?.detail || 'Failed to delete item.', 'danger');
+      setDeleteDialog((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleDeleteSponsor = (id, name) => {
+    confirmDelete('sponsor', id, name);
+  };
+
+  const handleImportFromExcel = () => {
+    setSyncExcelModalOpen(true);
+  };
+
+  const executeImportFromExcel = async () => {
+    try {
+      setImportingSponsors(true);
+      const res = await api.importSponsors();
+      showAlert(res.message || 'Sponsors synced successfully from Sponsor.xlsx!');
+      setSyncExcelModalOpen(false);
+      loadSponsors();
+    } catch (err) {
+      console.error(err);
+      showAlert(err.response?.data?.detail || 'Failed to import sponsors from Sponsor.xlsx.', 'danger');
+    } finally {
+      setImportingSponsors(false);
+    }
+  };
+
+  // ========================================================
+  // Plan Modal Handlers (Create & Edit Plans for Sponsors)
+  // ========================================================
+  const openPlanModal = (mode, item = null, defaultSponsorId = null) => {
+    if (mode === 'edit' && item) {
+      setEditingPlan(item);
+      setPlanForm({
+        plan: item.plan || '',
+        code: item.code || '',
+        sponsor: item.sponsor || '',
+        category: item.category || '',
+      });
+    } else {
+      setEditingPlan(null);
+      const targetSponsorId = defaultSponsorId || selectedPlanSponsorFilter || (sponsors[0]?.id || '');
+      const targetSponsor = sponsors.find((s) => String(s.id) === String(targetSponsorId));
+      setPlanForm({
+        plan: '',
+        code: '',
+        sponsor: targetSponsorId,
+        category: targetSponsor?.category || (categories[0]?.id || ''),
+      });
+    }
+    setPlanModalOpen(true);
+  };
+
+  const closePlanModal = () => {
+    setPlanModalOpen(false);
+    setEditingPlan(null);
+  };
+
+  const handleSavePlan = async (e) => {
+    e.preventDefault();
+    if (!planForm.plan.trim()) {
+      showAlert('Plan Name is required.', 'warning');
+      return;
+    }
+    if (!planForm.sponsor) {
+      showAlert('Please select a Sponsor for this plan.', 'warning');
+      return;
+    }
+    try {
+      setPlanSaving(true);
+      const selectedSp = sponsors.find((s) => String(s.id) === String(planForm.sponsor));
+      const payload = {
+        plan: planForm.plan.trim(),
+        code: planForm.code ? planForm.code.trim().toUpperCase() : '',
+        sponsor: Number(planForm.sponsor),
+        category: (selectedSp?.category || planForm.category) ? Number(selectedSp?.category || planForm.category) : null,
+      };
+      if (editingPlan) {
+        await api.updatePlan(editingPlan.id, payload);
+        showAlert(`Plan "${payload.plan}" updated successfully.`);
+      } else {
+        await api.createPlan(payload);
+        showAlert(`Plan "${payload.plan}" created successfully.`);
+      }
+      closePlanModal();
+      loadPlans();
+    } catch (err) {
+      console.error(err);
+      showAlert(err.response?.data?.detail || 'Failed to save plan.', 'danger');
+    } finally {
+      setPlanSaving(false);
+    }
+  };
+
+  const handleDeletePlan = (id, name) => {
+    confirmDelete('plan', id, name);
+  };
+
 
   // ========================================================
   // Modal Handlers (Create & Edit)
@@ -316,48 +638,35 @@ export default function TariffPlansView({
   // ========================================================
   // Delete Handlers
   // ========================================================
-  const handleDelete = async (entityType, id, name) => {
-    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
-
-    try {
-      let res;
-      if (entityType === 'reg_fee') {
-        res = await api.deleteRegistrationFee(id);
-        showAlert(res.detail || 'Plan deleted.');
-        loadRegFees();
-      } else if (entityType === 'lab') {
-        res = await api.deleteLabCharge(id);
-        showAlert(res.detail || 'Lab test charge deleted.');
-        loadLabCharges();
-      } else if (entityType === 'radiology') {
-        res = await api.deleteRadiologyCharge(id);
-        showAlert(res.detail || 'Radiology test charge deleted.');
-        loadRadiologyCharges();
-      } else if (entityType === 'ward') {
-        res = await api.deleteAdmissionFee(id);
-        showAlert(res.detail || 'Ward fee deleted.');
-        loadAdmissionFees();
-      } else if (entityType === 'other') {
-        res = await api.deleteOtherService(id);
-        showAlert(res.detail || 'Service deleted.');
-        loadOtherServices();
-      } else if (entityType === 'medication') {
-        res = await api.deleteMedicationFee(id);
-        showAlert(res.detail || 'Medication tariff deleted.');
-        loadMedicationFees();
-      } else if (entityType === 'package') {
-        res = await api.deletePackage(id);
-        showAlert(res.detail || 'Package deleted.');
-        loadPackages();
-      } else if (entityType === 'package_item') {
-        res = await api.deletePackageData(id);
-        showAlert(res.detail || 'Package item deleted.');
-        loadPackageData(selectedPackageId);
-      }
-    } catch (err) {
-      showAlert('Failed to delete item.', 'danger');
-    }
+  const handleDelete = (entityType, id, name) => {
+    confirmDelete(entityType, id, name);
   };
+
+
+  const filteredSponsors = sponsors.filter((item) => {
+    const term = searchTerm.toLowerCase();
+    const name = item.name || item.plan || '';
+    const matchesSearch =
+      name.toLowerCase().includes(term) ||
+      (item.code || '').toLowerCase().includes(term) ||
+      (item.category_name || '').toLowerCase().includes(term);
+    const matchesCategory = sponsorCategoryFilter
+      ? String(item.category) === String(sponsorCategoryFilter)
+      : true;
+    return matchesSearch && matchesCategory;
+  });
+
+  const filteredPlans = plans.filter((item) => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      (item.plan || '').toLowerCase().includes(term) ||
+      (item.code || '').toLowerCase().includes(term) ||
+      (item.sponsor_name || '').toLowerCase().includes(term);
+    const matchesSponsor = selectedPlanSponsorFilter
+      ? String(item.sponsor) === String(selectedPlanSponsorFilter)
+      : true;
+    return matchesSearch && matchesSponsor;
+  });
 
   return (
     <div className="container-fluid py-4">
@@ -383,7 +692,9 @@ export default function TariffPlansView({
             <ol className="breadcrumb bg-transparent p-0 mb-0 small text-muted">
               <li className="breadcrumb-item">Billing Administration</li>
               <li className="breadcrumb-item text-capitalize">
-                {activeSubmodule === 'service'
+                {activeSubmodule === 'sponsors'
+                  ? 'Sponsors'
+                  : activeSubmodule === 'service'
                   ? 'Service Tariffs'
                   : activeSubmodule === 'product'
                   ? 'Product Tariffs'
@@ -407,6 +718,34 @@ export default function TariffPlansView({
       <div className="card shadow mb-4">
         <div className="card-header py-2 bg-white">
           <ul className="nav nav-pills nav-fill card-header-pills font-weight-bold">
+            <li className="nav-item">
+              <a
+                className={`nav-link cursor-pointer ${
+                  activeSubmodule === 'sponsors' ? 'active bg-primary text-white shadow-sm' : 'text-gray-700'
+                }`}
+                onClick={() => {
+                  setActiveSubmodule('sponsors');
+                  setActiveSubSubmodule('manage_sponsors');
+                }}
+              >
+                <i className="fas fa-building mr-2"></i>
+                Sponsors
+              </a>
+            </li>
+            <li className="nav-item">
+              <a
+                className={`nav-link cursor-pointer ${
+                  activeSubmodule === 'plans' ? 'active bg-primary text-white shadow-sm' : 'text-gray-700'
+                }`}
+                onClick={() => {
+                  setActiveSubmodule('plans');
+                  setActiveSubSubmodule('manage_plans');
+                }}
+              >
+                <i className="fas fa-layer-group mr-2"></i>
+                Plans
+              </a>
+            </li>
             <li className="nav-item">
               <a
                 className={`nav-link cursor-pointer ${
@@ -454,6 +793,79 @@ export default function TariffPlansView({
 
         {/* Secondary Sub-submodule Navigation Bar */}
         <div className="card-body bg-light border-bottom py-2">
+          {activeSubmodule === 'sponsors' && (
+            <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+              <div className="d-flex flex-wrap gap-2">
+                <button
+                  className={`btn btn-sm ${
+                    activeSubSubmodule === 'manage_sponsors' ? 'btn-primary font-weight-bold' : 'btn-outline-secondary'
+                  } mr-2 mb-1`}
+                  onClick={() => setActiveSubSubmodule('manage_sponsors')}
+                >
+                  <i className="fas fa-list mr-1"></i> All Sponsors ({sponsors.length})
+                </button>
+                <button
+                  className="btn btn-sm btn-outline-info font-weight-bold mr-2 mb-1"
+                  onClick={() => {
+                    setActiveSubmodule('plans');
+                    setActiveSubSubmodule('manage_plans');
+                  }}
+                >
+                  <i className="fas fa-layer-group mr-1"></i> Go to Plans ({plans.length})
+                </button>
+              </div>
+              <div className="d-flex flex-wrap gap-2">
+                <button
+                  className="btn btn-sm btn-outline-success font-weight-bold mr-2 mb-1"
+                  onClick={handleImportFromExcel}
+                  disabled={importingSponsors}
+                  title="Import and synchronize all 64 HMO sponsors from Sponsor.xlsx"
+                >
+                  <i className={`fas fa-file-excel mr-1 ${importingSponsors ? 'fa-spin' : ''}`}></i>
+                  {importingSponsors ? 'Syncing...' : 'Sync from Sponsor.xlsx'}
+                </button>
+                <button
+                  className="btn btn-sm btn-primary font-weight-bold mb-1"
+                  onClick={() => openSponsorModal('create')}
+                >
+                  <i className="fas fa-plus-circle mr-1"></i> Add New Sponsor & Code
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeSubmodule === 'plans' && (
+            <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+              <div className="d-flex flex-wrap gap-2">
+                <button
+                  className={`btn btn-sm ${
+                    activeSubSubmodule === 'manage_plans' ? 'btn-primary font-weight-bold' : 'btn-outline-secondary'
+                  } mr-2 mb-1`}
+                  onClick={() => setActiveSubSubmodule('manage_plans')}
+                >
+                  <i className="fas fa-list mr-1"></i> All Plans ({plans.length})
+                </button>
+                <button
+                  className="btn btn-sm btn-outline-secondary font-weight-bold mr-2 mb-1"
+                  onClick={() => {
+                    setActiveSubmodule('sponsors');
+                    setActiveSubSubmodule('manage_sponsors');
+                  }}
+                >
+                  <i className="fas fa-building mr-1"></i> Manage Sponsors ({sponsors.length})
+                </button>
+              </div>
+              <div className="d-flex flex-wrap gap-2">
+                <button
+                  className="btn btn-sm btn-primary font-weight-bold mb-1"
+                  onClick={() => openPlanModal('create')}
+                >
+                  <i className="fas fa-plus-circle mr-1"></i> Create Plan for Sponsor
+                </button>
+              </div>
+            </div>
+          )}
+
           {activeSubmodule === 'service' && (
             <div className="d-flex flex-wrap gap-2">
               <button
@@ -542,6 +954,444 @@ export default function TariffPlansView({
           )}
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* 0. SPONSORS & HMO CODES SUBMODULE (from Sponsor.xlsx)    */}
+      {/* ======================================================== */}
+      {activeSubmodule === 'sponsors' && (
+        <div>
+          {/* Quick Stats Cards */}
+          <div className="row mb-4">
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card border-left-primary shadow-sm h-100 py-2">
+                <div className="card-body">
+                  <div className="row no-gutters align-items-center">
+                    <div className="col mr-2">
+                      <div className="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                        Total Configured Sponsors
+                      </div>
+                      <div className="h5 mb-0 font-weight-bold text-gray-800">{sponsors.length}</div>
+                    </div>
+                    <div className="col-auto">
+                      <i className="fas fa-building fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card border-left-success shadow-sm h-100 py-2">
+                <div className="card-body">
+                  <div className="row no-gutters align-items-center">
+                    <div className="col mr-2">
+                      <div className="text-xs font-weight-bold text-success text-uppercase mb-1">
+                        HMO Insurance Schemes
+                      </div>
+                      <div className="h5 mb-0 font-weight-bold text-gray-800">
+                        {sponsors.filter((s) => s.category_name?.toLowerCase().includes('hmo')).length}
+                      </div>
+                    </div>
+                    <div className="col-auto">
+                      <i className="fas fa-shield-alt fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card border-left-info shadow-sm h-100 py-2">
+                <div className="card-body">
+                  <div className="row no-gutters align-items-center">
+                    <div className="col mr-2">
+                      <div className="text-xs font-weight-bold text-info text-uppercase mb-1">
+                        Retainers & Private
+                      </div>
+                      <div className="h5 mb-0 font-weight-bold text-gray-800">
+                        {sponsors.filter((s) => !s.category_name?.toLowerCase().includes('hmo')).length}
+                      </div>
+                    </div>
+                    <div className="col-auto">
+                      <i className="fas fa-handshake fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card border-left-warning shadow-sm h-100 py-2">
+                <div className="card-body">
+                  <div className="row no-gutters align-items-center">
+                    <div className="col mr-2">
+                      <div className="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                        Enrolled Patients
+                      </div>
+                      <div className="h5 mb-0 font-weight-bold text-gray-800">
+                        {sponsors.reduce((acc, curr) => acc + (curr.patient_count || 0), 0)}
+                      </div>
+                    </div>
+                    <div className="col-auto">
+                      <i className="fas fa-users fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sponsors Table Card */}
+          <div className="card shadow mb-4">
+            <div className="card-header py-3 d-flex flex-wrap align-items-center justify-content-between bg-white">
+              <h6 className="m-0 font-weight-bold text-primary">
+                <i className="fas fa-building mr-1"></i> Hospital Sponsors ({filteredSponsors.length})
+              </h6>
+              <div className="d-flex flex-wrap align-items-center gap-2 mt-2 mt-md-0">
+                <select
+                  className="custom-select custom-select-sm mr-2"
+                  style={{ width: '160px' }}
+                  value={sponsorCategoryFilter}
+                  onChange={(e) => setSponsorCategoryFilter(e.target.value)}
+                >
+                  <option value="">All Categories</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.category}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="text"
+                  className="form-control form-control-sm mr-2"
+                  placeholder="Search name or code..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{ width: '190px' }}
+                />
+
+                <button
+                  className="btn btn-sm btn-outline-success font-weight-bold mr-2"
+                  onClick={handleImportFromExcel}
+                  disabled={importingSponsors}
+                  title="Import from Sponsor.xlsx in root"
+                >
+                  <i className={`fas fa-file-excel mr-1 ${importingSponsors ? 'fa-spin' : ''}`}></i>
+                  {importingSponsors ? 'Syncing...' : 'Sync Sponsor.xlsx'}
+                </button>
+
+                <button
+                  className="btn btn-sm btn-primary font-weight-bold"
+                  onClick={() => openSponsorModal('create')}
+                >
+                  <i className="fas fa-plus mr-1"></i> Add Sponsor
+                </button>
+              </div>
+            </div>
+
+            <div className="card-body p-0">
+              <div className="table-responsive">
+                <table className="table table-hover table-striped mb-0 align-middle">
+                  <thead className="thead-light">
+                    <tr>
+                      <th style={{ width: '60px' }}>#</th>
+                      <th>Sponsor / HMO Name</th>
+                      <th>Sponsor Code</th>
+                      <th>Category</th>
+                      <th>Plans</th>
+                      <th>Enrollees</th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSponsors.map((item, idx) => (
+                      <tr key={item.id}>
+                        <td className="font-weight-bold text-muted">{idx + 1}</td>
+                        <td className="font-weight-bold text-dark">
+                          <i className="fas fa-shield-alt text-primary mr-2"></i>
+                          {item.name || item.plan}
+                        </td>
+                        <td>
+                          <span className="badge badge-light border text-primary font-mono px-2 py-1 font-weight-bold" style={{ fontSize: '0.85rem' }}>
+                            {item.code || '—'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`badge ${item.category_name?.toLowerCase().includes('hmo') ? 'badge-primary' : 'badge-secondary'} px-2 py-1`}>
+                            {item.category_name || 'Standard'}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-xs btn-light border text-primary font-weight-bold px-2 py-1"
+                            onClick={() => {
+                              setSelectedPlanSponsorFilter(String(item.id));
+                              setActiveSubmodule('plans');
+                            }}
+                            title="View all plans for this sponsor"
+                          >
+                            <i className="fas fa-layer-group mr-1"></i> {item.plans_count || 0} plans
+                          </button>
+                        </td>
+                        <td>
+                          <span className="badge badge-light border text-dark px-2 py-1">
+                            <i className="fas fa-user-injured text-info mr-1"></i> {item.patient_count || 0} patients
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <button
+                            className="btn btn-sm btn-outline-primary mr-1"
+                            onClick={() => {
+                              setActiveSubmodule('plans');
+                              openPlanModal('create', null, item.id);
+                            }}
+                            title="Create a new plan for this sponsor"
+                          >
+                            <i className="fas fa-plus mr-1"></i> Add Plan
+                          </button>
+                          <button
+                            className="btn btn-sm btn-outline-info mr-1"
+                            onClick={() => openSponsorModal('edit', item)}
+                            title="Edit sponsor & code"
+                          >
+                            <i className="fas fa-edit"></i> Edit
+                          </button>
+                          <button
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => handleDeleteSponsor(item.id, item.name || item.plan)}
+                            title="Delete sponsor"
+                          >
+                            <i className="fas fa-trash-alt"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredSponsors.length === 0 && (
+                      <tr>
+                        <td colSpan="7" className="text-center py-5 text-muted">
+                          <i className="fas fa-building fa-2x mb-2 text-gray-300 d-block"></i>
+                          No sponsors found matching your criteria.
+                          <div className="mt-2">
+                            <button className="btn btn-sm btn-primary mr-2" onClick={() => openSponsorModal('create')}>
+                              <i className="fas fa-plus mr-1"></i> Add New Sponsor
+                            </button>
+                            <button className="btn btn-sm btn-success" onClick={handleImportFromExcel}>
+                              <i className="fas fa-file-excel mr-1"></i> Import from Sponsor.xlsx
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 0.1 PLANS (UNDER SPONSORS) SUBMODULE                     */}
+      {/* ======================================================== */}
+      {activeSubmodule === 'plans' && (
+        <div>
+          {/* Quick Stats Cards */}
+          <div className="row mb-4">
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card border-left-primary shadow-sm h-100 py-2">
+                <div className="card-body">
+                  <div className="row no-gutters align-items-center">
+                    <div className="col mr-2">
+                      <div className="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                        Total Configured Plans
+                      </div>
+                      <div className="h5 mb-0 font-weight-bold text-gray-800">{plans.length}</div>
+                    </div>
+                    <div className="col-auto">
+                      <i className="fas fa-layer-group fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card border-left-success shadow-sm h-100 py-2">
+                <div className="card-body">
+                  <div className="row no-gutters align-items-center">
+                    <div className="col mr-2">
+                      <div className="text-xs font-weight-bold text-success text-uppercase mb-1">
+                        Active Sponsors
+                      </div>
+                      <div className="h5 mb-0 font-weight-bold text-gray-800">{sponsors.length}</div>
+                    </div>
+                    <div className="col-auto">
+                      <i className="fas fa-building fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card border-left-info shadow-sm h-100 py-2">
+                <div className="card-body">
+                  <div className="row no-gutters align-items-center">
+                    <div className="col mr-2">
+                      <div className="text-xs font-weight-bold text-info text-uppercase mb-1">
+                        Filtered Plans
+                      </div>
+                      <div className="h5 mb-0 font-weight-bold text-gray-800">{filteredPlans.length}</div>
+                    </div>
+                    <div className="col-auto">
+                      <i className="fas fa-filter fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card border-left-warning shadow-sm h-100 py-2">
+                <div className="card-body">
+                  <div className="row no-gutters align-items-center">
+                    <div className="col mr-2">
+                      <div className="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                        Enrolled Patients
+                      </div>
+                      <div className="h5 mb-0 font-weight-bold text-gray-800">
+                        {plans.reduce((acc, curr) => acc + (curr.patient_count || 0), 0)}
+                      </div>
+                    </div>
+                    <div className="col-auto">
+                      <i className="fas fa-users fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Plans Table Card */}
+          <div className="card shadow mb-4">
+            <div className="card-header py-3 d-flex flex-wrap align-items-center justify-content-between bg-white">
+              <h6 className="m-0 font-weight-bold text-primary">
+                <i className="fas fa-layer-group mr-1"></i> Tariff Plans for Sponsors ({filteredPlans.length})
+              </h6>
+              <div className="d-flex flex-wrap align-items-center gap-2 mt-2 mt-md-0">
+                {/* Filter by Sponsor */}
+                <select
+                  className="custom-select custom-select-sm mr-2"
+                  style={{ maxWidth: '240px' }}
+                  value={selectedPlanSponsorFilter}
+                  onChange={(e) => setSelectedPlanSponsorFilter(e.target.value)}
+                >
+                  <option value="">All Sponsors ({sponsors.length})</option>
+                  {sponsors.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name || s.plan} {s.code ? `(${s.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="text"
+                  className="form-control form-control-sm mr-2"
+                  placeholder="Search plan or code..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{ width: '200px' }}
+                />
+
+                <button
+                  className="btn btn-sm btn-primary font-weight-bold"
+                  onClick={() => openPlanModal('create')}
+                >
+                  <i className="fas fa-plus mr-1"></i> Add Plan
+                </button>
+              </div>
+            </div>
+
+            <div className="card-body p-0">
+              <div className="table-responsive">
+                <table className="table table-hover table-striped mb-0 align-middle">
+                  <thead className="thead-light">
+                    <tr>
+                      <th style={{ width: '60px' }}>#</th>
+                      <th>Plan Name</th>
+                      <th>Sponsor</th>
+                      <th>Plan Code</th>
+                      <th>Enrollees</th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPlans.map((item, idx) => (
+                      <tr key={item.id}>
+                        <td className="font-weight-bold text-muted">{idx + 1}</td>
+                        <td className="font-weight-bold text-dark">
+                          <i className="fas fa-layer-group text-primary mr-2"></i>
+                          {item.plan}
+                        </td>
+                        <td>
+                          {item.sponsor_name ? (
+                            <span className="badge badge-light border text-dark px-2 py-1 font-weight-bold">
+                              <i className="fas fa-building text-primary mr-1"></i>
+                              {item.sponsor_name} {item.sponsor_code ? `(${item.sponsor_code})` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-muted small">Standard / General</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="badge badge-light border text-primary font-mono px-2 py-1 font-weight-bold" style={{ fontSize: '0.85rem' }}>
+                            {item.code || '—'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-light border text-dark px-2 py-1">
+                            <i className="fas fa-user-injured text-info mr-1"></i> {item.patient_count || 0} patients
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <button
+                            className="btn btn-sm btn-outline-info mr-1"
+                            onClick={() => openPlanModal('edit', item)}
+                            title="Edit plan"
+                          >
+                            <i className="fas fa-edit"></i> Edit
+                          </button>
+                          <button
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => handleDeletePlan(item.id, item.plan)}
+                            title="Delete plan"
+                          >
+                            <i className="fas fa-trash-alt"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredPlans.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="text-center py-5 text-muted">
+                          <i className="fas fa-layer-group fa-2x mb-2 text-gray-300 d-block"></i>
+                          No plans found matching your criteria.
+                          <div className="mt-2">
+                            <button className="btn btn-sm btn-primary" onClick={() => openPlanModal('create')}>
+                              <i className="fas fa-plus mr-1"></i> Add Plan for Sponsor
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* 1. SERVICE TARIFFS SUBMODULE                            */}
@@ -1557,6 +2407,455 @@ export default function TariffPlansView({
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* SPONSOR & HMO CODE CREATE / EDIT MODAL                   */}
+      {/* ======================================================== */}
+      {sponsorModalOpen && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1055 }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content shadow-lg border-0">
+              <div className="modal-header bg-gradient-primary text-white py-3">
+                <h5 className="modal-title font-weight-bold text-white mb-0">
+                  <i className="fas fa-shield-alt mr-2 text-warning"></i>
+                  {editingSponsor ? 'Edit Sponsor & Code' : 'Create New Sponsor & Code'}
+                </h5>
+                <button
+                  type="button"
+                  className="close text-white"
+                  aria-label="Close"
+                  onClick={closeSponsorModal}
+                  style={{ textShadow: 'none', opacity: 0.9 }}
+                >
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveSponsor}>
+                <div className="modal-body p-4">
+                  <div className="alert alert-light border small text-muted mb-3">
+                    <i className="fas fa-info-circle text-primary mr-1"></i>
+                    Configure hospital sponsors (HMOs, private retainers, corporate schemes) and their billing codes.
+                  </div>
+
+                  <div className="form-group mb-3">
+                    <label className="small font-weight-bold text-dark">
+                      Sponsor / HMO Name <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. AIICO MULTISHIELD, AVON HMO, RELIANCE HMO"
+                      value={sponsorForm.name}
+                      onChange={(e) =>
+                        setSponsorForm({ ...sponsorForm, name: e.target.value })
+                      }
+                      required
+                      autoFocus
+                    />
+                    <small className="form-text text-muted">
+                      Full official title of the insurance company, company retainer, or sponsor.
+                    </small>
+                  </div>
+
+                  <div className="form-group mb-3">
+                    <label className="small font-weight-bold text-dark">
+                      Sponsor Billing Code <span className="text-muted">(Short Code)</span>
+                    </label>
+                    <div className="input-group">
+                      <div className="input-group-prepend">
+                        <span className="input-group-text bg-light font-weight-bold text-muted">#</span>
+                      </div>
+                      <input
+                        type="text"
+                        className="form-control font-mono font-weight-bold text-uppercase"
+                        placeholder="e.g. AMH, AVO, REL, HYG"
+                        value={sponsorForm.code}
+                        onChange={(e) =>
+                          setSponsorForm({ ...sponsorForm, code: e.target.value.toUpperCase() })
+                        }
+                        maxLength={20}
+                      />
+                    </div>
+                    <small className="form-text text-muted">
+                      Unique identifier matching standard HMO billing shortcodes (as in Sponsor.xlsx).
+                    </small>
+                  </div>
+
+                  <div className="form-group mb-3">
+                    <label className="small font-weight-bold text-dark">
+                      Coverage Category <span className="text-danger">*</span>
+                    </label>
+                    <select
+                      className="form-control"
+                      value={sponsorForm.category}
+                      onChange={(e) =>
+                        setSponsorForm({ ...sponsorForm, category: e.target.value })
+                      }
+                      required
+                    >
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.category}
+                        </option>
+                      ))}
+                      {categories.length === 0 && (
+                        <option value="">No categories found (Default HMO will be applied)</option>
+                      )}
+                    </select>
+                    <small className="form-text text-muted">
+                      Classification determining billing tariff tier and authorization workflow.
+                    </small>
+                  </div>
+                </div>
+
+                <div className="modal-footer bg-light py-2">
+                  <button
+                    type="button"
+                    className="btn btn-secondary font-weight-bold"
+                    onClick={closeSponsorModal}
+                    disabled={sponsorSaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary font-weight-bold"
+                    disabled={sponsorSaving}
+                  >
+                    {sponsorSaving ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-1"></i> Saving...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-save mr-1"></i> {editingSponsor ? 'Update Sponsor' : 'Save Sponsor'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TARIFF PLAN CREATE / EDIT MODAL (SELECT SPONSOR)         */}
+      {/* ======================================================== */}
+      {planModalOpen && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1056 }}
+        >
+          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '500px', margin: '1.75rem auto' }}>
+            <div className="modal-content shadow-lg border-0" style={{ borderRadius: '10px', overflow: 'hidden' }}>
+              <div className="modal-header bg-gradient-primary text-white py-3 px-4 align-items-center">
+                <h5 className="modal-title font-weight-bold text-white mb-0 d-flex align-items-center">
+                  <i className="fas fa-layer-group mr-2 text-warning"></i>
+                  {editingPlan ? 'Edit Tariff Plan' : 'Create Plan for Sponsor'}
+                </h5>
+                <button
+                  type="button"
+                  className="close text-white"
+                  aria-label="Close"
+                  onClick={closePlanModal}
+                  style={{ textShadow: 'none', opacity: 0.9, fontSize: '1.4rem' }}
+                >
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSavePlan}>
+                <div className="modal-body p-4" style={{ maxHeight: '72vh', overflowY: 'auto' }}>
+                  <div className="alert alert-light border small text-muted mb-3 d-flex align-items-center">
+                    <i className="fas fa-info-circle text-primary mr-2" style={{ fontSize: '1.1rem' }}></i>
+                    <span>
+                      Select the sponsor, then define the plan name and optional short code.
+                    </span>
+                  </div>
+
+                  {/* 1. SELECT SPONSOR */}
+                  <div className="form-group mb-3">
+                    <label className="small font-weight-bold text-dark d-flex justify-content-between align-items-center mb-1">
+                      <span>Select Sponsor <span className="text-danger">*</span></span>
+                      {planForm.sponsor && (
+                        <span className="badge badge-light border text-primary font-weight-bold">
+                          Code: {sponsors.find((s) => String(s.id) === String(planForm.sponsor))?.code || 'None'}
+                        </span>
+                      )}
+                    </label>
+                    <select
+                      className="form-control font-weight-bold"
+                      value={planForm.sponsor}
+                      onChange={(e) => {
+                        const sId = e.target.value;
+                        const selectedSp = sponsors.find((s) => String(s.id) === String(sId));
+                        setPlanForm({
+                          ...planForm,
+                          sponsor: sId,
+                          category: selectedSp?.category || planForm.category,
+                        });
+                      }}
+                      required
+                      autoFocus
+                    >
+                      <option value="">-- Choose Sponsor (e.g. AIICO, AVON HMO, RELIANCE) --</option>
+                      {sponsors.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name || s.plan} {s.code ? `(${s.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="form-text text-muted">
+                      Every plan belongs directly to an HMO or corporate retainer.
+                    </small>
+                  </div>
+
+                  {/* 2. PLAN NAME */}
+                  <div className="form-group mb-3">
+                    <label className="small font-weight-bold text-dark mb-1">
+                      Plan Name <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Gold Plan, Silver Tier, Executive, Family, Comprehensive"
+                      value={planForm.plan}
+                      onChange={(e) =>
+                        setPlanForm({ ...planForm, plan: e.target.value })
+                      }
+                      required
+                    />
+                    <small className="form-text text-muted">
+                      The name of the benefit plan, tier, or insurance package.
+                    </small>
+                  </div>
+
+                  {/* 3. PLAN CODE */}
+                  <div className="form-group mb-1">
+                    <label className="small font-weight-bold text-dark mb-1">
+                      Plan Code <span className="text-muted">(Optional)</span>
+                    </label>
+                    <div className="input-group">
+                      <div className="input-group-prepend">
+                        <span className="input-group-text bg-light font-weight-bold text-muted">#</span>
+                      </div>
+                      <input
+                        type="text"
+                        className="form-control font-mono font-weight-bold text-uppercase"
+                        placeholder="e.g. GLD, SLV, EXE, FAM"
+                        value={planForm.code}
+                        onChange={(e) =>
+                          setPlanForm({ ...planForm, code: e.target.value.toUpperCase() })
+                        }
+                        maxLength={20}
+                      />
+                    </div>
+                    <small className="form-text text-muted">
+                      Optional short code for electronic claims and billing categorization.
+                    </small>
+                  </div>
+                </div>
+
+                <div className="modal-footer bg-light py-2 px-4 d-flex justify-content-end border-top">
+                  <button
+                    type="button"
+                    className="btn btn-secondary font-weight-bold px-3 mr-2"
+                    onClick={closePlanModal}
+                    disabled={planSaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary font-weight-bold px-4 shadow-sm"
+                    disabled={planSaving}
+                  >
+                    {planSaving ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-1"></i> Saving...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-check-circle mr-1"></i> {editingPlan ? 'Update Plan' : 'Save Plan'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* PROFESSIONAL DELETE CONFIRMATION MODAL                   */}
+      {/* ======================================================== */}
+      {deleteDialog.isOpen && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1060 }}
+        >
+          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '440px', margin: '1.75rem auto' }}>
+            <div className="modal-content shadow-lg border-0" style={{ borderRadius: '12px', overflow: 'hidden' }}>
+              <div className="modal-header bg-gradient-danger text-white py-3 px-4 align-items-center">
+                <h5 className="modal-title font-weight-bold text-white mb-0 d-flex align-items-center">
+                  <i className="fas fa-exclamation-triangle mr-2 text-warning"></i>
+                  {deleteDialog.title || 'Confirm Deletion'}
+                </h5>
+                <button
+                  type="button"
+                  className="close text-white"
+                  aria-label="Close"
+                  onClick={closeDeleteDialog}
+                  disabled={deleteDialog.loading}
+                  style={{ textShadow: 'none', opacity: 0.9, fontSize: '1.4rem' }}
+                >
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+
+              <div className="modal-body p-4 text-center">
+                <div
+                  className="rounded-circle d-inline-flex align-items-center justify-content-center mb-3 shadow-sm"
+                  style={{
+                    width: '68px',
+                    height: '68px',
+                    backgroundColor: '#fff1f0',
+                    color: '#e74a3b',
+                    border: '2px solid #ffa39e',
+                  }}
+                >
+                  <i className="fas fa-trash-alt fa-2x"></i>
+                </div>
+                <h5 className="font-weight-bold text-dark mb-2">Are you sure?</h5>
+                <p className="text-muted small mb-0 px-2" style={{ lineHeight: '1.5' }}>
+                  {deleteDialog.message}
+                </p>
+                <div className="alert alert-warning border text-left small mt-3 mb-0 py-2 px-3">
+                  <i className="fas fa-info-circle mr-1 text-warning"></i>
+                  This record will be permanently deleted from the database.
+                </div>
+              </div>
+
+              <div className="modal-footer bg-light py-2 px-4 d-flex justify-content-end border-top">
+                <button
+                  type="button"
+                  className="btn btn-secondary font-weight-bold px-3 mr-2"
+                  onClick={closeDeleteDialog}
+                  disabled={deleteDialog.loading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger font-weight-bold px-4 shadow-sm"
+                  onClick={handleExecuteDelete}
+                  disabled={deleteDialog.loading}
+                >
+                  {deleteDialog.loading ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin mr-1"></i> Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-trash-alt mr-1"></i> Yes, Delete
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* SYNC EXCEL CONFIRMATION MODAL                            */}
+      {/* ======================================================== */}
+      {syncExcelModalOpen && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1060 }}
+        >
+          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '480px', margin: '1.75rem auto' }}>
+            <div className="modal-content shadow-lg border-0" style={{ borderRadius: '12px', overflow: 'hidden' }}>
+              <div className="modal-header bg-success text-white py-3 px-4 align-items-center">
+                <h5 className="modal-title font-weight-bold text-white mb-0 d-flex align-items-center">
+                  <i className="fas fa-file-excel mr-2 text-warning"></i>
+                  Sync Sponsors from Sponsor.xlsx
+                </h5>
+                <button
+                  type="button"
+                  className="close text-white"
+                  aria-label="Close"
+                  onClick={() => setSyncExcelModalOpen(false)}
+                  disabled={importingSponsors}
+                  style={{ textShadow: 'none', opacity: 0.9, fontSize: '1.4rem' }}
+                >
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+
+              <div className="modal-body p-4 text-center">
+                <div
+                  className="rounded-circle d-inline-flex align-items-center justify-content-center mb-3 shadow-sm"
+                  style={{
+                    width: '68px',
+                    height: '68px',
+                    backgroundColor: '#e6f7ef',
+                    color: '#1cc88a',
+                    border: '2px solid #b7eb8f',
+                  }}
+                >
+                  <i className="fas fa-sync-alt fa-2x"></i>
+                </div>
+                <h5 className="font-weight-bold text-dark mb-2">Synchronize HMO Sponsors?</h5>
+                <p className="text-muted small mb-0 px-2" style={{ lineHeight: '1.5' }}>
+                  This will import and update all 64 HMO sponsors and their official billing codes from <strong>Sponsor.xlsx</strong> into the database.
+                </p>
+              </div>
+
+              <div className="modal-footer bg-light py-2 px-4 d-flex justify-content-end border-top">
+                <button
+                  type="button"
+                  className="btn btn-secondary font-weight-bold px-3 mr-2"
+                  onClick={() => setSyncExcelModalOpen(false)}
+                  disabled={importingSponsors}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-success font-weight-bold px-4 shadow-sm"
+                  onClick={executeImportFromExcel}
+                  disabled={importingSponsors}
+                >
+                  {importingSponsors ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin mr-1"></i> Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-check mr-1"></i> Proceed &amp; Sync
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+
+

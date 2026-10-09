@@ -17,7 +17,13 @@ const generateMRN = () => {
   return `ISL-${num}`;
 };
 
-export default function PatientModal({ isOpen, onClose, onPatientCreated, categories = [] }) {
+export default function PatientModal({
+  isOpen,
+  onClose,
+  onPatientCreated,
+  categories = [],
+  isSidebarCollapsed = false,
+}) {
   const [activeTab, setActiveTab] = useState('demographics'); // 'demographics' | 'contact' | 'billing'
 
   const [formData, setFormData] = useState({
@@ -32,6 +38,7 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
     email_address: '',
     address: '',
     category: '',
+    sponsor: '',
     plan: '',
     insurance_policy_number: '',
     relationship_to_patient: '',
@@ -41,6 +48,8 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
   });
 
   const [internalCategories, setInternalCategories] = useState(categories || []);
+  const [sponsors, setSponsors] = useState([]);
+  const [loadingSponsors, setLoadingSponsors] = useState(false);
   const [plans, setPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -62,6 +71,7 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
         email_address: '',
         address: '',
         category: '',
+        sponsor: '',
         plan: '',
         insurance_policy_number: '',
         relationship_to_patient: '',
@@ -99,11 +109,41 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
     }
   }, [categories, isOpen]);
 
-  // Load plans whenever category changes
+  // Load sponsors when modal opens or category changes
   useEffect(() => {
-    if (formData.category) {
+    if (isOpen) {
+      setLoadingSponsors(true);
+      const params = formData.category ? { category: formData.category } : {};
+      api.getSponsors(params)
+        .then((res) => {
+          setSponsors(Array.isArray(res) ? res : []);
+        })
+        .catch(() => {
+          setSponsors([]);
+        })
+        .finally(() => {
+          setLoadingSponsors(false);
+        });
+    }
+  }, [isOpen, formData.category]);
+
+  // Load plans whenever sponsor or category changes
+  useEffect(() => {
+    if (formData.sponsor) {
       setLoadingPlans(true);
-      api.getPlans(formData.category)
+      api.getPlans({ sponsor: formData.sponsor })
+        .then((res) => {
+          setPlans(Array.isArray(res) ? res : []);
+        })
+        .catch(() => {
+          setPlans([]);
+        })
+        .finally(() => {
+          setLoadingPlans(false);
+        });
+    } else if (formData.category) {
+      setLoadingPlans(true);
+      api.getPlans({ category: formData.category })
         .then((res) => {
           setPlans(Array.isArray(res) ? res : []);
         })
@@ -116,7 +156,8 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
     } else {
       setPlans([]);
     }
-  }, [formData.category]);
+  }, [formData.sponsor, formData.category]);
+
 
   // Live Age Calculation Helper
   const getCalculatedAge = useCallback((dobString) => {
@@ -149,10 +190,25 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value,
+      };
+      if (name === 'category') {
+        next.sponsor = '';
+        next.plan = '';
+      } else if (name === 'sponsor') {
+        next.plan = '';
+        if (value) {
+          const sp = sponsors.find((s) => String(s.id) === String(value));
+          if (sp?.category && !prev.category) {
+            next.category = sp.category;
+          }
+        }
+      }
+      return next;
+    });
 
     if (tabErrors[name]) {
       setTabErrors((prev) => {
@@ -249,6 +305,7 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
         email_address: formData.email_address?.trim() || null,
         address: formData.address?.trim() || null,
         category: formData.category ? Number(formData.category) : null,
+        sponsor: formData.sponsor ? Number(formData.sponsor) : null,
         plan: formData.plan ? Number(formData.plan) : null,
         insurance_policy_number: formData.insurance_policy_number?.trim() || null,
         relationship_to_patient: formData.relationship_to_patient?.trim() || null,
@@ -298,9 +355,12 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
   const selectedCategoryObj = internalCategories.find(
     (c) => String(c.id) === String(formData.category)
   );
-  const isHMOOrInsurance = selectedCategoryObj?.category?.toLowerCase().includes('hmo') ||
+  const selectedSponsorObj = sponsors.find((s) => String(s.id) === String(formData.sponsor));
+  const isHMOOrInsurance = !!formData.sponsor ||
+    selectedCategoryObj?.category?.toLowerCase().includes('hmo') ||
     selectedCategoryObj?.category?.toLowerCase().includes('retain') ||
     selectedCategoryObj?.category?.toLowerCase().includes('insurance');
+
 
   const hasDemographicsError = !!(tabErrors.surname || tabErrors.first_name || tabErrors.dob);
   const hasContactError = !!(tabErrors.phone_number);
@@ -309,8 +369,12 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
     <>
       <div className="modal-backdrop-custom" onClick={saving ? undefined : onClose}></div>
 
-      {/* Main Modal Card Dialog */}
-      <div className="card shadow patient-modal-dialog">
+      {/* Main Modal Card Dialog - Offset away from sidebar into content center */}
+      <div
+        className={`card shadow patient-modal-dialog ${
+          isSidebarCollapsed ? 'sidebar-collapsed' : ''
+        }`}
+      >
         {/* Header - SB Admin 2 Gradient */}
         <div className="card-header py-3 bg-gradient-primary text-white d-flex justify-content-between align-items-center">
           <div className="d-flex align-items-center">
@@ -688,15 +752,15 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
                 <div className="card border-left-primary shadow-sm mb-3">
                   <div className="card-body py-3">
                     <h6 className="font-weight-bold text-primary mb-3 small text-uppercase d-flex justify-content-between align-items-center">
-                      <span><i className="fas fa-credit-card mr-1"></i> Payer Category & Tariff Plan</span>
-                      {loadingPlans && (
-                        <span className="small text-muted"><i className="fas fa-spinner fa-spin mr-1"></i> Loading plans...</span>
+                      <span><i className="fas fa-credit-card mr-1"></i> Payer Category, Sponsor & Tariff Plan</span>
+                      {(loadingPlans || loadingSponsors) && (
+                        <span className="small text-muted"><i className="fas fa-spinner fa-spin mr-1"></i> Loading...</span>
                       )}
                     </h6>
                     <div className="row">
-                      <div className="col-md-6 form-group">
+                      <div className="col-md-4 form-group">
                         <label className="small font-weight-bold text-gray-700">
-                          Billing Category
+                          1. Billing Category
                         </label>
                         <select
                           name="category"
@@ -704,18 +768,49 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
                           value={formData.category}
                           onChange={handleChange}
                         >
-                          <option value="">-- Select Category (Default: Private) --</option>
+                          <option value="">-- All Categories --</option>
                           {internalCategories.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.category}
                             </option>
                           ))}
                         </select>
+                        <small className="form-text text-muted">e.g. HMO, Private, Retainer</small>
                       </div>
 
-                      <div className="col-md-6 form-group">
-                        <label className="small font-weight-bold text-gray-700">
-                          Tariff / Insurance Plan
+                      <div className="col-md-4 form-group">
+                        <label className="small font-weight-bold text-gray-700 d-flex justify-content-between align-items-center">
+                          <span>2. Select Sponsor</span>
+                          {loadingSponsors && <i className="fas fa-spinner fa-spin text-primary small"></i>}
+                        </label>
+                        <select
+                          name="sponsor"
+                          className="custom-select custom-select-sm font-weight-bold"
+                          value={formData.sponsor}
+                          onChange={handleChange}
+                        >
+                          <option value="">-- Choose Sponsor --</option>
+                          {sponsors.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name || s.plan} {s.code ? `(${s.code})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <small className="form-text text-muted">
+                          {selectedSponsorObj?.code ? (
+                            <span className="text-primary font-weight-bold">
+                              Code: {selectedSponsorObj.code}
+                            </span>
+                          ) : (
+                            'HMO or Corporate Retainer'
+                          )}
+                        </small>
+                      </div>
+
+                      <div className="col-md-4 form-group">
+                        <label className="small font-weight-bold text-gray-700 d-flex justify-content-between align-items-center">
+                          <span>3. Select Plan</span>
+                          {loadingPlans && <i className="fas fa-spinner fa-spin text-primary small"></i>}
                         </label>
                         <select
                           name="plan"
@@ -726,9 +821,9 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
                         >
                           <option value="">
                             {plans.length === 0
-                              ? formData.category
-                                ? '-- No specific plans --'
-                                : '-- Select Category first --'
+                              ? formData.sponsor
+                                ? '-- No plans for this sponsor --'
+                                : '-- Select Sponsor first --'
                               : '-- Select Plan --'}
                           </option>
                           {plans.map((p) => (
@@ -737,19 +832,29 @@ export default function PatientModal({ isOpen, onClose, onPatientCreated, catego
                             </option>
                           ))}
                         </select>
+                        <small className="form-text text-muted">
+                          {plans.length > 0 ? `${plans.length} plan(s) available` : 'Select sponsor first'}
+                        </small>
                       </div>
                     </div>
 
                     {isHMOOrInsurance && (
                       <div className="p-2 bg-light border border-warning rounded mt-1">
-                        <label className="small font-weight-bold text-dark mb-1">
-                          <i className="fas fa-shield-alt text-warning mr-1"></i> HMO Policy / Enrollee ID
-                        </label>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <label className="small font-weight-bold text-dark mb-0">
+                            <i className="fas fa-shield-alt text-warning mr-1"></i> Policy / Enrollee ID
+                          </label>
+                          {selectedSponsorObj?.code && (
+                            <span className="badge badge-warning text-dark font-mono px-2 py-0">
+                              HMO Code: {selectedSponsorObj.code}
+                            </span>
+                          )}
+                        </div>
                         <input
                           type="text"
                           name="insurance_policy_number"
                           className="form-control form-control-sm"
-                          placeholder="e.g. AXA-10293 or NHIS-48201"
+                          placeholder="e.g. AXA-10293 or NHIS-48201 or Enrollee ID"
                           value={formData.insurance_policy_number}
                           onChange={handleChange}
                         />
