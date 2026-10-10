@@ -12,9 +12,15 @@ const ALLERGY_PRESETS = [
   'Asthma / Atopy',
 ];
 
-const generateMRN = () => {
-  const num = Math.floor(1000 + Math.random() * 9000);
-  return `ISL-${num}`;
+const extractMRNNumber = (mrn) => {
+  const match = (mrn || '').match(/\d{4,}/);
+  return match ? match[0] : null;
+};
+
+const generateMRN = (sponsorCode = '', existingNumber = null) => {
+  const num = existingNumber || Math.floor(1000 + Math.random() * 9000);
+  const code = (sponsorCode || '').trim().toUpperCase();
+  return code ? `${code}/ISL-${num}` : `ISL-${num}`;
 };
 
 export default function PatientModal({
@@ -198,13 +204,27 @@ export default function PatientModal({
       if (name === 'category') {
         next.sponsor = '';
         next.plan = '';
+        const existingNum = extractMRNNumber(prev.hospital_number);
+        next.hospital_number = generateMRN('', existingNum);
       } else if (name === 'sponsor') {
         next.plan = '';
+        const existingNum = extractMRNNumber(prev.hospital_number);
         if (value) {
           const sp = sponsors.find((s) => String(s.id) === String(value));
           if (sp?.category && !prev.category) {
             next.category = sp.category;
           }
+          next.hospital_number = generateMRN(sp?.code, existingNum);
+        } else {
+          next.hospital_number = generateMRN('', existingNum);
+        }
+      } else if (name === 'plan' && value && !prev.sponsor) {
+        const selectedPlan = plans.find((p) => String(p.id) === String(value));
+        if (selectedPlan?.sponsor) {
+          next.sponsor = String(selectedPlan.sponsor);
+          const sp = sponsors.find((s) => String(s.id) === String(selectedPlan.sponsor));
+          const existingNum = extractMRNNumber(prev.hospital_number);
+          next.hospital_number = generateMRN(sp?.code, existingNum);
         }
       }
       return next;
@@ -219,9 +239,6 @@ export default function PatientModal({
     }
   };
 
-  const handleRegenerateMRN = () => {
-    setFormData((prev) => ({ ...prev, hospital_number: generateMRN() }));
-  };
 
   const handleToggleAllergy = (preset) => {
     if (preset.startsWith('NKDA')) {
@@ -292,7 +309,8 @@ export default function PatientModal({
     try {
       setSaving(true);
 
-      const hospNum = formData.hospital_number?.trim() || String(Math.floor(1000 + Math.random() * 9000));
+      const sp = sponsors.find((s) => String(s.id) === String(formData.sponsor));
+      const hospNum = formData.hospital_number?.trim() || generateMRN(sp?.code);
       const payload = {
         surname: formData.surname.trim(),
         first_name: formData.first_name.trim(),
@@ -601,31 +619,31 @@ export default function PatientModal({
 
                     <div className="row">
                       <div className="col-md-6 form-group mb-0">
-                        <label className="small font-weight-bold text-gray-700 d-flex justify-content-between">
-                          <span>Hospital / MRN Number</span>
-                          <button
-                            type="button"
-                            className="btn btn-link btn-sm p-0 text-primary small text-decoration-none"
-                            onClick={handleRegenerateMRN}
-                          >
-                            <i className="fas fa-sync-alt mr-1"></i> Regenerate
-                          </button>
+                        <label className="small font-weight-bold text-gray-700 d-flex justify-content-between align-items-center">
+                          <span>
+                            Hospital / MRN Number{' '}
+                            <span className="badge badge-light border text-muted ml-1" style={{ fontSize: '0.68rem' }}>
+                              Auto-Generated
+                            </span>
+                          </span>
                         </label>
                         <div className="input-group input-group-sm patient-input-group">
                           <div className="input-group-prepend">
-                            <span className="input-group-text font-weight-bold">#</span>
+                            <span className="input-group-text font-weight-bold bg-light">#</span>
                           </div>
                           <input
                             type="text"
                             name="hospital_number"
-                            className="form-control form-control-sm font-weight-bold"
-                            placeholder="e.g. ISL-1024"
+                            className="form-control form-control-sm font-weight-bold bg-light text-dark"
+                            style={{ cursor: 'not-allowed' }}
+                            placeholder="e.g. ISL-1024 or AMH/ISL-4563"
                             value={formData.hospital_number}
-                            onChange={handleChange}
+                            disabled
+                            readOnly
                           />
                         </div>
                         <small className="form-text text-muted">
-                          Auto-generated unique record ID or enter existing paper chart number.
+                          Auto-generated MRN. Automatically prefixes the sponsor code when a sponsor is selected.
                         </small>
                       </div>
                     </div>
@@ -799,7 +817,7 @@ export default function PatientModal({
                         <small className="form-text text-muted">
                           {selectedSponsorObj?.code ? (
                             <span className="text-primary font-weight-bold">
-                              Code: {selectedSponsorObj.code}
+                              Code: {selectedSponsorObj.code} &bull; MRN: {formData.hospital_number}
                             </span>
                           ) : (
                             'HMO or Corporate Retainer'
