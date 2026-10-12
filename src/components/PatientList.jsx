@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import api from '../services/api';
+import { showToast } from './Toast';
 
 export default function PatientList({
   patients,
@@ -12,6 +13,8 @@ export default function PatientList({
   categories,
   onOpenNewPatient,
   onSelectPatient,
+  onEditPatient,
+  onScheduleAppointment,
   onPatientQueued,
 }) {
   const [queueingId, setQueueingId] = useState(null);
@@ -24,10 +27,18 @@ export default function PatientList({
         purpose: 'General Consultation',
         visit_type: 'New-case',
       });
-      alert(`Patient ${patient.full_name || patient.surname} added to Consultation Queue in database!`);
+      showToast(
+        `Patient ${patient.full_name || `${patient.surname} ${patient.first_name}`} added to Consultation Queue!`,
+        'success',
+        'Consultation Queue'
+      );
       if (onPatientQueued) onPatientQueued();
     } catch (err) {
-      alert('Error queueing patient: ' + (err.response?.data?.detail || err.message));
+      showToast(
+        err.response?.data?.detail || err.message || 'Error queueing patient',
+        'danger',
+        'Queue Error'
+      );
     } finally {
       setQueueingId(null);
     }
@@ -92,14 +103,14 @@ export default function PatientList({
             <table className="table table-bordered table-hover" id="dataTable" width="100%" cellSpacing="0">
               <thead className="thead-light">
                 <tr>
-                  <th>Hospital No.</th>
-                  <th>Full Name</th>
-                  <th>Phone No.</th>
-                  <th>Age / Gender</th>
-                  <th>Category</th>
-                  <th>Plan</th>
-                  <th>Status</th>
-                  <th>Actions</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Hospital No.</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Full Name</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Phone No.</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Age / Gender</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Category</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Plan</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Status</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -119,34 +130,36 @@ export default function PatientList({
                       className="cursor-pointer"
                       onClick={() => onSelectPatient(patient)}
                     >
-                      <td className="font-weight-bold text-danger">
-                        {patient.hospital_number || '-'}
+                      <td className="align-middle text-nowrap">
+                        <span className="hospital-badge">
+                          {patient.hospital_number || '-'}
+                        </span>
                       </td>
-                      <td className="font-weight-bold text-primary">
+                      <td className="font-weight-bold text-primary align-middle text-nowrap">
                         {patient.full_name || `${patient.surname} ${patient.first_name}`}
                       </td>
-                      <td>
+                      <td className="align-middle text-nowrap">
                         <span style={{ color: '#8b4513' }}>
                           {patient.phone_number || '-'}
                         </span>
                       </td>
-                      <td>
+                      <td className="align-middle text-nowrap">
                         {patient.age ? `${patient.age} yrs` : '-'} / {patient.gender || '-'}
                       </td>
-                      <td>
-                        <span className="badge badge-light border px-2 py-1">
+                      <td className="align-middle text-nowrap">
+                        <span className="badge badge-light border px-2 py-1 font-weight-bold">
                           {patient.category_name || '-'}
                         </span>
                       </td>
-                      <td>{patient.plan_name || '-'}</td>
-                      <td>
+                      <td className="align-middle text-nowrap">{patient.plan_name || '-'}</td>
+                      <td className="align-middle text-nowrap">
                         {patient.active === 1 ? (
                           <span className="badge badge-success">Active</span>
                         ) : (
                           <span className="badge badge-secondary">Inactive</span>
                         )}
                       </td>
-                      <td onClick={(e) => e.stopPropagation()}>
+                      <td onClick={(e) => e.stopPropagation()} className="text-nowrap">
                         <button
                           className="btn btn-sm btn-info py-0 px-2 mr-1"
                           onClick={() => onSelectPatient(patient)}
@@ -154,6 +167,24 @@ export default function PatientList({
                         >
                           <i className="fas fa-eye fa-xs"></i>
                         </button>
+                        {onEditPatient && (
+                          <button
+                            className="btn btn-sm btn-warning py-0 px-2 mr-1"
+                            onClick={() => onEditPatient(patient)}
+                            title="Edit Patient Record"
+                          >
+                            <i className="fas fa-edit fa-xs"></i>
+                          </button>
+                        )}
+                        {onScheduleAppointment && (
+                          <button
+                            className="btn btn-sm btn-success py-0 px-2 mr-1"
+                            onClick={() => onScheduleAppointment(patient)}
+                            title="Schedule Appointment"
+                          >
+                            <i className="fas fa-calendar-plus fa-xs"></i>
+                          </button>
+                        )}
                         <button
                           className="btn btn-sm btn-primary py-0 px-2"
                           onClick={() => handleQueuePatient(patient)}

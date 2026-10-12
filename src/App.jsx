@@ -17,7 +17,11 @@ import ReportingView from './components/ReportingView';
 import LoginPage from './components/LoginPage';
 import PatientModal from './components/PatientModal';
 import PatientDetailModal from './components/PatientDetailModal';
+import AppointmentsView from './components/AppointmentsView';
+import ScheduleAppointmentModal from './components/ScheduleAppointmentModal';
+import VisitPurposesView from './components/VisitPurposesView';
 import LoginModal from './components/LoginModal';
+import ToastContainer from './components/Toast';
 import api from './services/api';
 import {
   normalizeDepartmentKey,
@@ -75,9 +79,13 @@ export default function App() {
   const [loadingPatients, setLoadingPatients] = useState(false);
 
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const [editingPatient, setEditingPatient] = useState(null);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [appointmentsFilter, setAppointmentsFilter] = useState('today');
+  const [isScheduleAppointmentModalOpen, setIsScheduleAppointmentModalOpen] = useState(false);
+  const [patientForAppointment, setPatientForAppointment] = useState(null);
 
   // Load Dashboard Data
   const loadDashboardData = useCallback(async () => {
@@ -149,10 +157,33 @@ export default function App() {
     }
   }, [isAuthenticated, loadPatients]);
 
-  const handlePatientCreated = (newPatient) => {
+  const handlePatientCreated = (savedPatient, options = {}) => {
     loadDashboardData();
     loadPatients();
-    setSelectedPatient(newPatient);
+    setEditingPatient(null);
+    if (options?.scheduleAppointment) {
+      setPatientForAppointment(savedPatient);
+      setIsScheduleAppointmentModalOpen(true);
+    } else {
+      setSelectedPatient(savedPatient);
+    }
+  };
+
+  const handleOpenScheduleAppointment = (patient) => {
+    setSelectedPatient(null);
+    setPatientForAppointment(patient || null);
+    setIsScheduleAppointmentModalOpen(true);
+  };
+
+  const handleEditPatient = (patient) => {
+    setSelectedPatient(null);
+    setEditingPatient(patient);
+    setIsNewPatientModalOpen(true);
+  };
+
+  const handleOpenNewPatient = () => {
+    setEditingPatient(null);
+    setIsNewPatientModalOpen(true);
   };
 
   const handleLogin = async (username, password) => {
@@ -224,10 +255,12 @@ export default function App() {
 
   const isTabAllowed = (tab) => {
     if (isAdmin) return true;
-    if (tab === 'dashboard' || tab === 'profile') return true;
+    if (tab === 'dashboard' || tab === 'profile' || tab === 'appointments' || tab === 'visit-purposes') return true;
 
     const tabModuleMap = {
       patients: ['frontdesk', 'nursing', 'clinical', 'anc', 'billings'],
+      appointments: ['frontdesk', 'nursing', 'clinical', 'admin', 'cmd'],
+      'visit-purposes': ['frontdesk', 'nursing', 'clinical', 'admin', 'cmd', 'tariffs'],
       queues: ['nursing', 'clinical', 'frontdesk'],
       billings: ['billings'],
       pharmacy: ['opd_pharmacy'],
@@ -263,6 +296,9 @@ export default function App() {
           if (tab === 'inventory') {
             if (subTab) setInventorySubmodule(subTab);
           }
+          if (tab === 'appointments') {
+            if (subTab) setAppointmentsFilter(subTab);
+          }
           if (tab === 'reporting') {
             if (subTab) setReportingCategory(subTab);
             if (subSubTab) setReportingSubReport(subSubTab);
@@ -274,7 +310,7 @@ export default function App() {
         setSelectedDepartment={setSelectedDepartment}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
-        onOpenNewPatient={() => setIsNewPatientModalOpen(true)}
+        onOpenNewPatient={handleOpenNewPatient}
         dbDepartments={dbDepartments}
         user={user}
       />
@@ -292,7 +328,7 @@ export default function App() {
               setSearchQuery(q);
               if (activeTab !== 'patients') setActiveTab('patients');
             }}
-            onOpenNewPatient={() => setIsNewPatientModalOpen(true)}
+            onOpenNewPatient={handleOpenNewPatient}
             onOpenProfile={(subTab) => {
               setActiveTab('profile');
               setProfileSubTab(subTab || 'overview');
@@ -367,7 +403,7 @@ export default function App() {
                   stats={stats}
                   categories={categories}
                   recentPatients={patients.slice(0, 5)}
-                  onOpenNewPatient={() => setIsNewPatientModalOpen(true)}
+                  onOpenNewPatient={handleOpenNewPatient}
                   onViewPatients={() => setActiveTab('patients')}
                   onViewQueues={() => setActiveTab('queues')}
                   onSelectPatient={(p) => setSelectedPatient(p)}
@@ -395,9 +431,21 @@ export default function App() {
                   selectedCategory={selectedCategory}
                   setSelectedCategory={setSelectedCategory}
                   categories={categories}
-                  onOpenNewPatient={() => setIsNewPatientModalOpen(true)}
+                  onOpenNewPatient={handleOpenNewPatient}
                   onSelectPatient={(p) => setSelectedPatient(p)}
+                  onEditPatient={handleEditPatient}
+                  onScheduleAppointment={handleOpenScheduleAppointment}
                   onPatientQueued={loadInitialData}
+                />
+              )}
+
+              {activeTab === 'appointments' && (
+                <AppointmentsView
+                  initialFilter={appointmentsFilter}
+                  onSelectPatient={(p) => setSelectedPatient(p)}
+                  onOpenNewPatient={handleOpenNewPatient}
+                  onOpenVisitPurposes={() => setActiveTab('visit-purposes')}
+                  onNavigate={(tab) => setActiveTab(tab)}
                 />
               )}
 
@@ -405,14 +453,14 @@ export default function App() {
                 <QueueView
                   queues={queues}
                   onSelectPatient={(p) => setSelectedPatient(p)}
-                  onOpenNewPatient={() => setIsNewPatientModalOpen(true)}
+                  onOpenNewPatient={handleOpenNewPatient}
                   onRefreshQueues={loadInitialData}
                 />
               )}
 
               {activeTab === 'billings' && (
                 <BillingsView
-                  onOpenNewPatient={() => setIsNewPatientModalOpen(true)}
+                  onOpenNewPatient={handleOpenNewPatient}
                 />
               )}
 
@@ -426,7 +474,7 @@ export default function App() {
 
               {activeTab === 'anc' && (
                 <ANCView
-                  onOpenNewPatient={() => setIsNewPatientModalOpen(true)}
+                  onOpenNewPatient={handleOpenNewPatient}
                 />
               )}
 
@@ -437,6 +485,7 @@ export default function App() {
               {activeTab === 'profile' && (
                 <ProfileSettingsView
                   initialTab={profileSubTab}
+                  currentUser={user}
                   onUserUpdated={(updatedUser) => setUser(updatedUser)}
                 />
               )}
@@ -468,6 +517,12 @@ export default function App() {
                   initialReport={reportingSubReport}
                 />
               )}
+
+              {activeTab === 'visit-purposes' && (
+                <VisitPurposesView
+                  onBack={() => setActiveTab('appointments')}
+                />
+              )}
             </>
           )}
         </div>
@@ -493,8 +548,14 @@ export default function App() {
       {/* Modals */}
       <PatientModal
         isOpen={isNewPatientModalOpen}
-        onClose={() => setIsNewPatientModalOpen(false)}
+        patientToEdit={editingPatient}
+        onClose={() => {
+          setIsNewPatientModalOpen(false);
+          setEditingPatient(null);
+        }}
+        onPatientSaved={handlePatientCreated}
         onPatientCreated={handlePatientCreated}
+        onScheduleAppointmentRequested={handleOpenScheduleAppointment}
         categories={categories}
         isSidebarCollapsed={isSidebarCollapsed}
       />
@@ -503,6 +564,21 @@ export default function App() {
         patient={selectedPatient}
         onClose={() => setSelectedPatient(null)}
         onQueueUpdated={loadInitialData}
+        onEdit={handleEditPatient}
+        onScheduleAppointment={handleOpenScheduleAppointment}
+      />
+
+      <ScheduleAppointmentModal
+        isOpen={isScheduleAppointmentModalOpen}
+        patient={patientForAppointment}
+        onClose={() => {
+          setIsScheduleAppointmentModalOpen(false);
+          setPatientForAppointment(null);
+        }}
+        onAppointmentScheduled={() => {
+          loadDashboardData();
+          loadInitialData();
+        }}
       />
 
       <LoginModal
@@ -510,6 +586,8 @@ export default function App() {
         onClose={() => setIsLoginModalOpen(false)}
         onLoginSuccess={handleLogin}
       />
+
+      <ToastContainer />
     </div>
   );
 }

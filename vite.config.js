@@ -10,6 +10,22 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      '/case_note': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/filtered_case_note': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/static': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/media': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

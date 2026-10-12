@@ -69,6 +69,8 @@ export default function Dashboard({
       borderClass: 'border-left-info',
       textClass: 'text-info',
       icon: 'fas fa-calendar-check',
+      badge: stats?.today_appointments > 0 ? `${stats.today_appointments} Scheduled` : null,
+      onClick: () => (onNavigateTab ? onNavigateTab('appointments') : null),
     },
   ];
 
@@ -285,15 +287,15 @@ export default function Dashboard({
             </div>
             <div className="card-body p-0">
               <div className="table-responsive">
-                <table className="table table-hover align-items-center mb-0" width="100%">
+                <table className="table table-hover align-middle mb-0" width="100%">
                   <thead className="thead-light">
                     <tr>
-                      <th style={{ fontSize: '0.8rem' }}>Patient Name</th>
-                      <th style={{ fontSize: '0.8rem' }}>Hospital No.</th>
-                      <th style={{ fontSize: '0.8rem' }}>Phone</th>
-                      <th style={{ fontSize: '0.8rem' }}>Category</th>
-                      <th style={{ fontSize: '0.8rem' }}>Plan</th>
-                      <th className="text-right" style={{ fontSize: '0.8rem' }}>Action</th>
+                      <th style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Patient Name</th>
+                      <th style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Hospital No.</th>
+                      <th style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Phone</th>
+                      <th style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Category</th>
+                      <th style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Plan</th>
+                      <th className="text-right" style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -313,31 +315,31 @@ export default function Dashboard({
                             onClick={() => onSelectPatient && onSelectPatient(p)}
                             title="Click to view patient details"
                           >
-                            <td className="font-weight-bold text-primary align-middle">
+                            <td className="font-weight-bold text-primary align-middle text-nowrap">
                               <div className="d-flex align-items-center">
                                 <span className="avatar-initials mr-2">{initials}</span>
-                                <span>{fullName}</span>
+                                <span className="font-weight-bold">{fullName}</span>
                               </div>
                             </td>
-                            <td className="align-middle">
+                            <td className="align-middle text-nowrap">
                               <span className="hospital-badge">
                                 {p.hospital_number || '-'}
                               </span>
                             </td>
-                            <td className="align-middle small text-gray-700">
+                            <td className="align-middle small text-gray-700 text-nowrap">
                               {p.phone_number || '-'}
                             </td>
-                            <td className="align-middle">
+                            <td className="align-middle text-nowrap">
                               <span className={`badge px-2 py-1 ${catBadge}`}>
                                 {p.category_name || '-'}
                               </span>
                             </td>
-                            <td className="align-middle small text-muted">
+                            <td className="align-middle small text-muted text-nowrap font-weight-bold">
                               {p.plan_name || '-'}
                             </td>
-                            <td className="align-middle text-right">
+                            <td className="align-middle text-right text-nowrap">
                               <button
-                                className="btn btn-sm btn-light border text-primary font-weight-bold py-1 px-2"
+                                className="btn btn-sm btn-outline-primary font-weight-bold py-1 px-3 shadow-sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (onSelectPatient) {
@@ -348,7 +350,7 @@ export default function Dashboard({
                                 }}
                                 title="Open patient profile"
                               >
-                                View
+                                <i className="fas fa-eye mr-1"></i> View
                               </button>
                             </td>
                           </tr>
