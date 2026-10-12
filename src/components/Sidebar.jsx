@@ -518,6 +518,12 @@ export default function Sidebar({
                     >
                       <i className="fas fa-hand-holding-medical mr-1"></i> Other Services Fees
                     </a>
+                    <a
+                      className="collapse-item cursor-pointer text-info font-weight-bold d-block py-1 small"
+                      onClick={() => setActiveTab('visit-purposes')}
+                    >
+                      <i className="fas fa-stethoscope mr-1"></i> Consultation &amp; Visit Purposes
+                    </a>
                   </div>
                 )}
 
@@ -792,33 +798,40 @@ export default function Sidebar({
                 <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
+                    onClick={() => setActiveTab('appointments', 'today')}
                   >
                     <i className="fas fa-calendar-check mr-1"></i> Today's Appointments
                   </a>
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
+                    onClick={() => setActiveTab('appointments', 'upcoming')}
                   >
                     <i className="fas fa-calendar-alt mr-1"></i> Upcoming Appointments
                   </a>
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
+                    onClick={() => setActiveTab('appointments', 'cancelled')}
                   >
                     <i className="fas fa-calendar-times mr-1"></i> Cancelled Appointments
                   </a>
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
+                    onClick={() => setActiveTab('appointments', 'expired')}
                   >
                     <i className="fas fa-history mr-1"></i> Expired Appointments
                   </a>
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
+                    onClick={() => setActiveTab('appointments', 'all')}
                   >
                     <i className="fas fa-notes-medical mr-1"></i> Appointments Reviews
+                  </a>
+                  <div className="dropdown-divider my-1"></div>
+                  <a
+                    className="collapse-item cursor-pointer text-info font-weight-bold"
+                    onClick={() => setActiveTab('visit-purposes')}
+                  >
+                    <i className="fas fa-stethoscope mr-1"></i> Visit Purposes Setup
                   </a>
                 </div>
               )}
@@ -944,7 +957,7 @@ export default function Sidebar({
             <li className="nav-item" style={{ marginTop: '-10px' }}>
               <a
                 className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('queues')}
+                onClick={() => setActiveTab('appointments', 'today')}
               >
                 <i className="fas fa-clipboard-list"></i>
                 <span>Today's Appointments List</span>
@@ -1081,19 +1094,19 @@ export default function Sidebar({
                 <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
+                    onClick={() => setActiveTab('appointments', 'today')}
                   >
                     <i className="fas fa-calendar-day mr-1"></i> Today's Appointments
                   </a>
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
+                    onClick={() => setActiveTab('appointments', 'upcoming')}
                   >
                     <i className="fas fa-calendar-alt mr-1"></i> Upcoming Appointments
                   </a>
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
+                    onClick={() => setActiveTab('appointments', 'all')}
                   >
                     <i className="fas fa-history mr-1"></i> All-time Appointments
                   </a>

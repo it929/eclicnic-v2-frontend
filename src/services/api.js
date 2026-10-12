@@ -54,9 +54,17 @@ export const api = {
     return res.data;
   },
 
+  async getUserProfile() {
+    return this.getProfile();
+  },
+
   async updateProfile(profileData) {
     const res = await client.put('/profile/', profileData);
     return res.data;
+  },
+
+  async updateUserProfile(profileData) {
+    return this.updateProfile(profileData);
   },
 
   async changePassword(passwordData) {
@@ -65,7 +73,22 @@ export const api = {
   },
 
   async updatePin(pinData) {
-    const res = await client.post('/profile/update-pin/', pinData);
+    const payload = typeof pinData === 'object' ? pinData : { new_pin: pinData };
+    const res = await client.post('/profile/update-pin/', payload);
+    return res.data;
+  },
+
+  async uploadAvatar(fileOrFormData) {
+    let formData;
+    if (fileOrFormData instanceof FormData) {
+      formData = fileOrFormData;
+    } else {
+      formData = new FormData();
+      formData.append('avatar', fileOrFormData);
+    }
+    const res = await client.post('/profile/avatar/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return res.data;
   },
 
@@ -116,7 +139,7 @@ export const api = {
   },
 
   async updatePatient(id, patientData) {
-    const res = await client.put(`/patients/${id}/`, patientData);
+    const res = await client.patch(`/patients/${id}/`, patientData);
     return res.data;
   },
 
@@ -216,9 +239,106 @@ export const api = {
     return res.data;
   },
 
-  async getVisitPurposes() {
-    const res = await client.get('/visit-purposes/');
+  async getEncounters(params = {}) {
+    const res = await client.get('/encounters/', { params });
     return res.data?.results || res.data;
+  },
+
+  async createEncounter(encounterData) {
+    const res = await client.post('/encounters/', encounterData);
+    return res.data;
+  },
+
+  async getVisitPurposes(params = {}) {
+    const res = await client.get('/visit-purposes/', { params });
+    return res.data?.results || res.data;
+  },
+
+  async createVisitPurpose(data) {
+    const res = await client.post('/visit-purposes/', data);
+    return res.data;
+  },
+
+  async updateVisitPurpose(id, data) {
+    const res = await client.patch(`/visit-purposes/${id}/`, data);
+    return res.data;
+  },
+
+  async deleteVisitPurpose(id) {
+    const res = await client.delete(`/visit-purposes/${id}/`);
+    return res.data;
+  },
+
+  async bulkImportVisitPurposes(formDataOrPayload) {
+    const isFormData = formDataOrPayload instanceof FormData;
+    const config = isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
+    const res = await client.post('/visit-purposes/bulk-import/', formDataOrPayload, config);
+    return res.data;
+  },
+
+  async downloadVisitPurposesTemplate() {
+    const res = await client.get('/visit-purposes/download-template/', { responseType: 'blob' });
+    return res.data;
+  },
+
+  // ==========================================
+  // Appointments
+  // ==========================================
+  async getAppointments(params = {}) {
+    const res = await client.get('/appointments/', { params });
+    return res.data;
+  },
+
+  async getAppointmentSummary() {
+    const res = await client.get('/appointments/summary/');
+    return res.data;
+  },
+
+  async createAppointment(appointmentData) {
+    const res = await client.post('/appointments/', appointmentData);
+    return res.data;
+  },
+
+  async updateAppointment(id, appointmentData) {
+    const res = await client.put(`/appointments/${id}/`, appointmentData);
+    return res.data;
+  },
+
+  async cancelAppointment(id) {
+    const res = await client.post(`/appointments/${id}/cancel/`);
+    return res.data;
+  },
+
+  async completeAppointment(id) {
+    const res = await client.post(`/appointments/${id}/complete/`);
+    return res.data;
+  },
+
+  async deleteAppointment(id) {
+    const res = await client.delete(`/appointments/${id}/`);
+    return res.data;
+  },
+
+  async getClinicians(params = {}) {
+    try {
+      const res = await client.get('/task-manager/staff/', { params });
+      return res.data?.staff || res.data || [];
+    } catch (_) {
+      return [];
+    }
+  },
+
+  // ==========================================
+  // Vital Signs & Triage
+  // ==========================================
+  async getVitals(params = {}) {
+    const res = await client.get('/vitals/', { params });
+    return res.data?.results || res.data;
+  },
+
+  async recordVitals(vitalsData) {
+    const res = await client.post('/vitals/', vitalsData);
+    return res.data;
   },
 
   // ==========================================
@@ -413,8 +533,16 @@ export const api = {
     return res.data;
   },
 
-  async staffAction(actionData) {
-    const res = await client.post('/task-manager/staff-action/', actionData);
+  async updateStaffUser(staffData) {
+    const res = await client.put('/task-manager/staff/', staffData);
+    return res.data;
+  },
+
+  async staffAction(actionOrData, userId, pinCode) {
+    const payload = typeof actionOrData === 'object'
+      ? actionOrData
+      : { action: actionOrData, user_id: userId, pin_code: pinCode };
+    const res = await client.post('/task-manager/staff-action/', payload);
     return res.data;
   },
 

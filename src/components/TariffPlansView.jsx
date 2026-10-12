@@ -1098,7 +1098,6 @@ export default function TariffPlansView({
                       <th style={{ width: '60px' }}>#</th>
                       <th>Sponsor / HMO Name</th>
                       <th>Sponsor Code</th>
-                      <th>Category</th>
                       <th>Plans</th>
                       <th>Enrollees</th>
                       <th className="text-right">Actions</th>
@@ -1115,11 +1114,6 @@ export default function TariffPlansView({
                         <td>
                           <span className="badge badge-light border text-primary font-mono px-2 py-1 font-weight-bold" style={{ fontSize: '0.85rem' }}>
                             {item.code || '—'}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`badge ${item.category_name?.toLowerCase().includes('hmo') ? 'badge-primary' : 'badge-secondary'} px-2 py-1`}>
-                            {item.category_name || 'Standard'}
                           </span>
                         </td>
                         <td>
@@ -1169,7 +1163,7 @@ export default function TariffPlansView({
                     ))}
                     {filteredSponsors.length === 0 && (
                       <tr>
-                        <td colSpan="7" className="text-center py-5 text-muted">
+                        <td colSpan="6" className="text-center py-5 text-muted">
                           <i className="fas fa-building fa-2x mb-2 text-gray-300 d-block"></i>
                           No sponsors found matching your criteria.
                           <div className="mt-2">
@@ -2069,20 +2063,47 @@ export default function TariffPlansView({
         <div
           className="modal fade show d-block"
           tabIndex="-1"
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1050, overflowY: 'auto' }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
         >
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content shadow-lg border-0">
-              <div className="modal-header bg-primary text-white">
-                <h5 className="modal-title font-weight-bold">
-                  <i className="fas fa-file-invoice-dollar mr-2"></i> {modalState.title}
+          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '520px', margin: '1.75rem auto' }}>
+            <div
+              className="modal-content shadow-lg border-0"
+              style={{
+                borderRadius: '12px',
+                overflow: 'hidden',
+                maxHeight: 'calc(100vh - 3.5rem)',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <div className="modal-header bg-gradient-primary text-white py-3 px-4 d-flex align-items-center justify-content-between">
+                <h5 className="modal-title font-weight-bold text-white mb-0 d-flex align-items-center">
+                  <i className="fas fa-file-invoice-dollar mr-2 text-warning"></i> {modalState.title}
                 </h5>
-                <button type="button" className="close text-white" onClick={closeModal}>
-                  <span>&times;</span>
+                <button
+                  type="button"
+                  className="close text-white"
+                  aria-label="Close"
+                  onClick={closeModal}
+                  style={{ textShadow: 'none', opacity: 0.9, fontSize: '1.4rem' }}
+                >
+                  <span aria-hidden="true">&times;</span>
                 </button>
               </div>
-              <form onSubmit={handleModalSubmit}>
-                <div className="modal-body p-4">
+              <form
+                onSubmit={handleModalSubmit}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  flex: 1,
+                  margin: 0,
+                }}
+              >
+                <div className="modal-body p-4" style={{ overflowY: 'auto', flex: 1 }}>
                   {/* Registration Fee Form */}
                   {modalState.entityType === 'reg_fee' && (
                     <>
@@ -2394,11 +2415,11 @@ export default function TariffPlansView({
                     </>
                   )}
                 </div>
-                <div className="modal-footer bg-light">
-                  <button type="button" className="btn btn-secondary" onClick={closeModal}>
+                <div className="modal-footer bg-light py-3 px-4 border-top d-flex justify-content-end align-items-center">
+                  <button type="button" className="btn btn-secondary font-weight-bold px-3 mr-2" onClick={closeModal}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary font-weight-bold">
+                  <button type="submit" className="btn btn-primary font-weight-bold px-4">
                     <i className="fas fa-save mr-1"></i> Save Changes
                   </button>
                 </div>
@@ -2415,12 +2436,27 @@ export default function TariffPlansView({
         <div
           className="modal fade show d-block"
           tabIndex="-1"
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1055 }}
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1055, overflowY: 'auto' }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeSponsorModal();
+          }}
         >
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content shadow-lg border-0">
-              <div className="modal-header bg-gradient-primary text-white py-3">
-                <h5 className="modal-title font-weight-bold text-white mb-0">
+          <div
+            className="modal-dialog modal-dialog-centered"
+            style={{ maxWidth: '520px', margin: '1.75rem auto' }}
+          >
+            <div
+              className="modal-content shadow-lg border-0"
+              style={{
+                borderRadius: '12px',
+                overflow: 'hidden',
+                maxHeight: 'calc(100vh - 3.5rem)',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <div className="modal-header bg-gradient-primary text-white py-3 px-4 d-flex align-items-center justify-content-between">
+                <h5 className="modal-title font-weight-bold text-white mb-0 d-flex align-items-center">
                   <i className="fas fa-shield-alt mr-2 text-warning"></i>
                   {editingSponsor ? 'Edit Sponsor & Code' : 'Create New Sponsor & Code'}
                 </h5>
@@ -2429,14 +2465,26 @@ export default function TariffPlansView({
                   className="close text-white"
                   aria-label="Close"
                   onClick={closeSponsorModal}
-                  style={{ textShadow: 'none', opacity: 0.9 }}
+                  style={{ textShadow: 'none', opacity: 0.9, fontSize: '1.4rem' }}
                 >
                   <span aria-hidden="true">&times;</span>
                 </button>
               </div>
 
-              <form onSubmit={handleSaveSponsor}>
-                <div className="modal-body p-4">
+              <form
+                onSubmit={handleSaveSponsor}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  flex: 1,
+                  margin: 0,
+                }}
+              >
+                <div
+                  className="modal-body p-4"
+                  style={{ overflowY: 'auto', flex: 1 }}
+                >
                   <div className="alert alert-light border small text-muted mb-3">
                     <i className="fas fa-info-circle text-primary mr-1"></i>
                     Configure hospital sponsors (HMOs, private retainers, corporate schemes) and their billing codes.
@@ -2486,7 +2534,7 @@ export default function TariffPlansView({
                     </small>
                   </div>
 
-                  <div className="form-group mb-3">
+                  <div className="form-group mb-0">
                     <label className="small font-weight-bold text-dark">
                       Coverage Category <span className="text-danger">*</span>
                     </label>
@@ -2513,10 +2561,10 @@ export default function TariffPlansView({
                   </div>
                 </div>
 
-                <div className="modal-footer bg-light py-2">
+                <div className="modal-footer bg-light py-3 px-4 border-top d-flex justify-content-end align-items-center">
                   <button
                     type="button"
-                    className="btn btn-secondary font-weight-bold"
+                    className="btn btn-secondary font-weight-bold px-3 mr-2"
                     onClick={closeSponsorModal}
                     disabled={sponsorSaving}
                   >
@@ -2524,7 +2572,7 @@ export default function TariffPlansView({
                   </button>
                   <button
                     type="submit"
-                    className="btn btn-primary font-weight-bold"
+                    className="btn btn-primary font-weight-bold px-4"
                     disabled={sponsorSaving}
                   >
                     {sponsorSaving ? (

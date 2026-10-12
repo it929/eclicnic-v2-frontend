@@ -1,22 +1,101 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 
-export default function ProfileSettingsView({ initialTab = 'overview', onUserUpdated }) {
+export default function ProfileSettingsView({ initialTab = 'overview', currentUser, onUserUpdated }) {
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(() => {
+    if (currentUser) return currentUser;
+    try {
+      const u = localStorage.getItem('clinic365_user');
+      return u ? JSON.parse(u) : null;
+    } catch (_) {
+      return null;
+    }
+  });
+  const [hasPin, setHasPin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
 
-  // Form states
-  const [modifyForm, setModifyForm] = useState({
-    fullname: '',
-    email: '',
-    phone_number: '',
-    address: '',
-    dob: '',
-    gender: 'Male',
-    pin_code: '',
+  // Avatar upload states
+  const fileInputRef = useRef(null);
+  const modifyFileInputRef = useRef(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+
+  // Helper to compute avatar source
+  const getAvatarSrc = () => {
+    if (avatarPreview) return avatarPreview;
+    if (!profile) return '/admin-img/undraw_profile.svg';
+    if (profile.avatar_url) return profile.avatar_url;
+    if (profile.avatar && profile.avatar !== 'image/avatar.svg') {
+      if (profile.avatar.startsWith('http') || profile.avatar.startsWith('/')) {
+        return profile.avatar;
+      }
+      return `/media/${profile.avatar}`;
+    }
+    return '/admin-img/undraw_profile.svg';
+  };
+
+  // Avatar upload handler
+  const handleAvatarFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select a valid image file (PNG, JPG, JPEG, WEBP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image file is too large. Maximum allowed size is 5MB.');
+      return;
+    }
+
+    // Immediate local preview
+    const localUrl = URL.createObjectURL(file);
+    setAvatarPreview(localUrl);
+
+    try {
+      setAvatarUploading(true);
+      setError(null);
+      setMessage(null);
+      const res = await api.uploadAvatar(file);
+      setMessage(res.detail || 'Profile photo updated successfully!');
+      if (res.user) {
+        setProfile(res.user);
+        localStorage.setItem('clinic365_user', JSON.stringify(res.user));
+        if (onUserUpdated) onUserUpdated(res.user);
+      }
+    } catch (err) {
+      console.error('Avatar upload failed:', err);
+      setError(err.response?.data?.detail || 'Failed to upload profile photo. Please try again.');
+      setAvatarPreview(null);
+    } finally {
+      setAvatarUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (modifyFileInputRef.current) modifyFileInputRef.current.value = '';
+    }
+  };
+
+  // Form states initialized with cached user data
+  const [modifyForm, setModifyForm] = useState(() => {
+    let u = currentUser;
+    if (!u) {
+      try {
+        const cached = localStorage.getItem('clinic365_user');
+        if (cached) u = JSON.parse(cached);
+      } catch (_) {}
+    }
+    return {
+      fullname: u?.fullname || '',
+      email: u?.email || '',
+      phone_number: u?.phone_number || '',
+      address: u?.address || '',
+      dob: u?.dob || '',
+      gender: u?.gender || 'Male',
+      pin_code: '',
+    };
   });
 
   const [passwordForm, setPasswordForm] = useState({
@@ -40,9 +119,11 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const data = await api.getUserProfile();
+      const data = await api.getProfile();
       if (data?.user) {
         setProfile(data.user);
+        if (data.has_pin !== undefined) setHasPin(data.has_pin);
+        localStorage.setItem('clinic365_user', JSON.stringify(data.user));
         setModifyForm({
           fullname: data.user.fullname || '',
           email: data.user.email || '',
@@ -52,6 +133,7 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
           gender: data.user.gender || 'Male',
           pin_code: '',
         });
+        if (onUserUpdated) onUserUpdated(data.user);
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
@@ -69,10 +151,11 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
     try {
       setError(null);
       setMessage(null);
-      const res = await api.updateUserProfile(modifyForm);
+      const res = await api.updateProfile(modifyForm);
       setMessage(res.detail || 'Profile successfully updated!');
       if (res.user) {
         setProfile(res.user);
+        localStorage.setItem('clinic365_user', JSON.stringify(res.user));
         if (onUserUpdated) onUserUpdated(res.user);
       }
     } catch (err) {
@@ -156,12 +239,101 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
               </h6>
             </div>
             <div className="card-body text-center">
-              <img
-                src="/admin-img/undraw_profile.svg"
-                alt="Avatar"
-                className="img-profile rounded-circle mb-3 border p-1"
-                style={{ width: '110px', height: '110px' }}
-              />
+              {/* Interactive Avatar Container with Hover Overlay & Upload Button */}
+              <div className="position-relative d-inline-block mb-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  accept="image/png, image/jpeg, image/jpg, image/webp"
+                  onChange={handleAvatarFileSelected}
+                />
+                <div
+                  className="position-relative rounded-circle overflow-hidden shadow-sm border"
+                  style={{
+                    width: '120px',
+                    height: '120px',
+                    margin: '0 auto',
+                    cursor: 'pointer',
+                    backgroundColor: '#f8fafc',
+                  }}
+                  onClick={() => !avatarUploading && fileInputRef.current?.click()}
+                  title="Click to change profile picture"
+                >
+                  <img
+                    src={getAvatarSrc()}
+                    alt="Staff Avatar"
+                    className="w-100 h-100"
+                    style={{ objectFit: 'cover' }}
+                    onError={(e) => {
+                      e.currentTarget.src = '/admin-img/undraw_profile.svg';
+                    }}
+                  />
+                  {avatarUploading ? (
+                    <div
+                      className="position-absolute d-flex flex-column align-items-center justify-content-center text-white"
+                      style={{
+                        inset: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.7)',
+                        fontSize: '0.78rem',
+                      }}
+                    >
+                      <i className="fas fa-spinner fa-spin fa-2x mb-1"></i>
+                      <span>Uploading...</span>
+                    </div>
+                  ) : (
+                    <div
+                      className="position-absolute d-flex flex-column align-items-center justify-content-center text-white"
+                      style={{
+                        inset: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.45)',
+                        opacity: 0,
+                        transition: 'opacity 0.2s ease-in-out',
+                        fontSize: '0.76rem',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}
+                    >
+                      <i className="fas fa-camera fa-lg mb-1"></i>
+                      <span className="font-weight-bold">Change</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Floating Camera Badge Button */}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary rounded-circle position-absolute shadow"
+                  style={{
+                    bottom: '2px',
+                    right: '2px',
+                    width: '34px',
+                    height: '34px',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '2px solid #ffffff',
+                  }}
+                  onClick={() => !avatarUploading && fileInputRef.current?.click()}
+                  title="Upload profile photo"
+                  disabled={avatarUploading}
+                >
+                  <i className={`fas ${avatarUploading ? 'fa-spinner fa-spin' : 'fa-camera'}`} style={{ fontSize: '0.8rem' }}></i>
+                </button>
+              </div>
+
+              <div className="mb-3">
+                <button
+                  type="button"
+                  className="btn btn-xs btn-outline-primary py-1 px-3 font-weight-bold shadow-sm"
+                  style={{ fontSize: '0.74rem', borderRadius: '14px' }}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={avatarUploading}
+                >
+                  <i className="fas fa-upload mr-1"></i> Change Photo
+                </button>
+              </div>
               <h4 className="font-weight-bold text-gray-800 mb-1">
                 {profile?.fullname || profile?.username || 'User'}
               </h4>
@@ -303,6 +475,48 @@ export default function ProfileSettingsView({ initialTab = 'overview', onUserUpd
                   <h6 className="font-weight-bold text-primary mb-3">
                     <i className="fas fa-user-edit mr-1"></i> Update Staff Details
                   </h6>
+
+                  {/* Photo Upload Section in Modify Form */}
+                  <div className="card bg-light border p-3 mb-3" style={{ borderRadius: '10px' }}>
+                    <div className="d-flex align-items-center justify-content-between flex-wrap" style={{ gap: '12px' }}>
+                      <div className="d-flex align-items-center">
+                        <img
+                          src={getAvatarSrc()}
+                          alt="Avatar Thumbnail"
+                          className="rounded-circle border mr-3 shadow-sm"
+                          style={{ width: '56px', height: '56px', objectFit: 'cover' }}
+                          onError={(e) => {
+                            e.currentTarget.src = '/admin-img/undraw_profile.svg';
+                          }}
+                        />
+                        <div>
+                          <div className="font-weight-bold text-gray-800 small">Staff Profile Photo</div>
+                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                            Upload PNG, JPG, or WEBP (Max 5MB). Photo syncs across all hospital modules.
+                          </div>
+                        </div>
+                      </div>
+                      <div className="d-flex align-items-center" style={{ gap: '8px' }}>
+                        <input
+                          type="file"
+                          ref={modifyFileInputRef}
+                          style={{ display: 'none' }}
+                          accept="image/png, image/jpeg, image/jpg, image/webp"
+                          onChange={handleAvatarFileSelected}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary font-weight-bold shadow-sm d-inline-flex align-items-center"
+                          style={{ borderRadius: '6px' }}
+                          onClick={() => modifyFileInputRef.current?.click()}
+                          disabled={avatarUploading}
+                        >
+                          <i className={`fas ${avatarUploading ? 'fa-spinner fa-spin' : 'fa-camera'} mr-1`}></i>
+                          {avatarUploading ? 'Uploading...' : 'Upload New Photo'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="row">
                     <div className="col-md-6 form-group">

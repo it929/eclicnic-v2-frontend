@@ -51,6 +51,30 @@ export default function TaskManagerView({
     pin: '1234',
   });
 
+  // Edit Staff Modal State
+  const [editStaffModal, setEditStaffModal] = useState({
+    open: false,
+    user: null,
+    form: {
+      user_id: null,
+      username: '',
+      fullname: '',
+      email: '',
+      phone_number: '',
+      department_id: '',
+      gender: 'Male',
+      dob: '',
+      address: '',
+      status: 'Active',
+      active: '1',
+      pin: '',
+      password: '',
+      admin_pin: '',
+    },
+    saving: false,
+    showAdminPin: false,
+  });
+
   // Admin PIN Action Modal State
   const [actionModal, setActionModal] = useState({
     open: false,
@@ -401,6 +425,53 @@ export default function TaskManagerView({
     } catch (err) {
       const msg = err.response?.data?.detail || err.response?.data?.message || 'Action authorization failed. Check Admin PIN.';
       showAlert(msg, 'danger');
+    }
+  };
+
+  const handleOpenEditStaff = (user) => {
+    setEditStaffModal({
+      open: true,
+      user,
+      form: {
+        user_id: user.id,
+        username: user.username || '',
+        fullname: user.fullname || '',
+        email: user.email || '',
+        phone_number: user.phone_number || '',
+        department_id: user.department_id ? String(user.department_id) : '',
+        gender: user.gender || 'Male',
+        dob: user.dob || '',
+        address: user.address || '',
+        status: user.active === '1' ? 'Active' : 'Inactive',
+        active: user.active || '1',
+        pin: '',
+        password: '',
+        admin_pin: '',
+      },
+      saving: false,
+      showAdminPin: false,
+    });
+  };
+
+  const handleSaveEditStaff = async (e) => {
+    e.preventDefault();
+    if (!editStaffModal.form.username.trim()) {
+      showAlert('Staff ID / Username is required.', 'danger');
+      return;
+    }
+    if (!editStaffModal.form.fullname.trim()) {
+      showAlert('Full Name is required.', 'danger');
+      return;
+    }
+    try {
+      setEditStaffModal((prev) => ({ ...prev, saving: true }));
+      const res = await api.updateStaffUser(editStaffModal.form);
+      showAlert(res.detail || 'Staff details updated successfully!', 'success');
+      setEditStaffModal((prev) => ({ ...prev, open: false, saving: false, user: null }));
+      await loadStaffData();
+    } catch (err) {
+      showAlert(err.response?.data?.detail || 'Failed to update staff member. Check Admin PIN.', 'danger');
+      setEditStaffModal((prev) => ({ ...prev, saving: false }));
     }
   };
 
@@ -777,6 +848,14 @@ export default function TaskManagerView({
                         </td>
                         <td className="text-right">
                           <div className="btn-group btn-group-sm">
+                            {/* Edit Staff User */}
+                            <button
+                              className="btn btn-outline-primary"
+                              title="Edit Staff Information"
+                              onClick={() => handleOpenEditStaff(u)}
+                            >
+                              <i className="fas fa-edit mr-1"></i> Edit
+                            </button>
                             {/* Toggle Status */}
                             <button
                               className={`btn ${u.active === '1' ? 'btn-outline-danger' : 'btn-outline-success'}`}
@@ -2606,6 +2685,313 @@ export default function TaskManagerView({
                   </button>
                   <button type="submit" className="btn btn-primary font-weight-bold">
                     <i className="fas fa-check-circle mr-1"></i> Authorize & Execute
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 2. EDIT STAFF USER MODAL */}
+      {editStaffModal.open && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.55)', zIndex: 1055 }}
+        >
+          <div className="modal-dialog modal-dialog-centered modal-lg" role="document">
+            <div className="modal-content shadow-lg border-0 rounded">
+              <div className="card-header py-3 bg-gradient-primary text-white d-flex justify-content-between align-items-center">
+                <h6 className="m-0 font-weight-bold d-flex align-items-center">
+                  <i className="fas fa-user-edit mr-2 text-warning"></i>
+                  Edit Staff Account: {editStaffModal.user?.fullname || editStaffModal.user?.username}
+                </h6>
+                <button
+                  type="button"
+                  className="close text-white"
+                  onClick={() => setEditStaffModal((prev) => ({ ...prev, open: false }))}
+                  aria-label="Close"
+                  style={{ opacity: 0.9 }}
+                >
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditStaff}>
+                <div className="modal-body p-4" style={{ maxHeight: '78vh', overflowY: 'auto' }}>
+                  <div className="row">
+                    {/* Username / Staff ID */}
+                    <div className="col-md-6 form-group">
+                      <label className="font-weight-bold small text-gray-700">
+                        Staff ID / Username <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        required
+                        value={editStaffModal.form.username}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, username: e.target.value },
+                          })
+                        }
+                      />
+                      <small className="text-muted">Unique staff identification username.</small>
+                    </div>
+
+                    {/* Full Name */}
+                    <div className="col-md-6 form-group">
+                      <label className="font-weight-bold small text-gray-700">
+                        Full Name <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        required
+                        value={editStaffModal.form.fullname}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, fullname: e.target.value },
+                          })
+                        }
+                      />
+                    </div>
+
+                    {/* Department / Category */}
+                    <div className="col-md-6 form-group">
+                      <label className="font-weight-bold small text-gray-700">
+                        Department / Role Category <span className="text-danger">*</span>
+                      </label>
+                      <select
+                        className="custom-select custom-select-sm"
+                        required
+                        value={editStaffModal.form.department_id}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, department_id: e.target.value },
+                          })
+                        }
+                      >
+                        <option value="">-- Select Department --</option>
+                        {departments.map((dept) => (
+                          <option key={dept.id} value={dept.id}>
+                            {dept.department}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Account Status */}
+                    <div className="col-md-6 form-group">
+                      <label className="font-weight-bold small text-gray-700">
+                        Account Status
+                      </label>
+                      <select
+                        className="custom-select custom-select-sm"
+                        value={editStaffModal.form.status}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: {
+                              ...editStaffModal.form,
+                              status: e.target.value,
+                              active: e.target.value === 'Active' ? '1' : '0',
+                            },
+                          })
+                        }
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Deactivated / Suspended</option>
+                      </select>
+                    </div>
+
+                    {/* Email */}
+                    <div className="col-md-6 form-group">
+                      <label className="font-weight-bold small text-gray-700">Email Address</label>
+                      <input
+                        type="email"
+                        className="form-control form-control-sm"
+                        value={editStaffModal.form.email}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, email: e.target.value },
+                          })
+                        }
+                      />
+                    </div>
+
+                    {/* Phone Number */}
+                    <div className="col-md-6 form-group">
+                      <label className="font-weight-bold small text-gray-700">Phone Number</label>
+                      <input
+                        type="tel"
+                        className="form-control form-control-sm"
+                        value={editStaffModal.form.phone_number}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, phone_number: e.target.value },
+                          })
+                        }
+                      />
+                    </div>
+
+                    {/* Gender */}
+                    <div className="col-md-6 form-group">
+                      <label className="font-weight-bold small text-gray-700">Gender</label>
+                      <select
+                        className="custom-select custom-select-sm"
+                        value={editStaffModal.form.gender}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, gender: e.target.value },
+                          })
+                        }
+                      >
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                      </select>
+                    </div>
+
+                    {/* Date of Birth */}
+                    <div className="col-md-6 form-group">
+                      <label className="font-weight-bold small text-gray-700">Date of Birth</label>
+                      <input
+                        type="date"
+                        className="form-control form-control-sm"
+                        value={editStaffModal.form.dob}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, dob: e.target.value },
+                          })
+                        }
+                      />
+                    </div>
+
+                    {/* Residential Address */}
+                    <div className="col-12 form-group">
+                      <label className="font-weight-bold small text-gray-700">Residential Address</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        value={editStaffModal.form.address}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, address: e.target.value },
+                          })
+                        }
+                        placeholder="e.g. 46, Ijaye Road, Ogba, Lagos"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Optional Security Updates Card */}
+                  <div className="card bg-light border p-3 mb-3">
+                    <h6 className="font-weight-bold text-gray-800 small text-uppercase mb-2">
+                      <i className="fas fa-shield-alt mr-1 text-primary"></i> Optional Security Updates
+                    </h6>
+                    <div className="row">
+                      <div className="col-md-6 form-group mb-2">
+                        <label className="small font-weight-bold text-muted">Update Staff Security PIN</label>
+                        <input
+                          type="password"
+                          maxLength="4"
+                          className="form-control form-control-sm"
+                          placeholder="Leave blank to keep current"
+                          value={editStaffModal.form.pin}
+                          onChange={(e) =>
+                            setEditStaffModal({
+                              ...editStaffModal,
+                              form: { ...editStaffModal.form, pin: e.target.value },
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="col-md-6 form-group mb-2">
+                        <label className="small font-weight-bold text-muted">Reset Staff Password</label>
+                        <input
+                          type="password"
+                          className="form-control form-control-sm"
+                          placeholder="Leave blank to keep current"
+                          value={editStaffModal.form.password}
+                          onChange={(e) =>
+                            setEditStaffModal({
+                              ...editStaffModal,
+                              form: { ...editStaffModal.form, password: e.target.value },
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Admin Authorization PIN */}
+                  <div className="form-group mb-0">
+                    <label className="font-weight-bold small text-danger">
+                      <i className="fas fa-lock mr-1"></i> Admin Security PIN (Required to authorize changes)
+                    </label>
+                    <div className="input-group input-group-sm">
+                      <input
+                        type={editStaffModal.showAdminPin ? 'text' : 'password'}
+                        className="form-control"
+                        placeholder="Enter your Admin PIN"
+                        maxLength="6"
+                        required
+                        value={editStaffModal.form.admin_pin}
+                        onChange={(e) =>
+                          setEditStaffModal({
+                            ...editStaffModal,
+                            form: { ...editStaffModal.form, admin_pin: e.target.value },
+                          })
+                        }
+                      />
+                      <div className="input-group-append">
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary"
+                          onClick={() =>
+                            setEditStaffModal({
+                              ...editStaffModal,
+                              showAdminPin: !editStaffModal.showAdminPin,
+                            })
+                          }
+                        >
+                          <i className={`fas fa-${editStaffModal.showAdminPin ? 'eye-slash' : 'eye'}`}></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-footer bg-light py-2 px-3 d-flex justify-content-between">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setEditStaffModal((prev) => ({ ...prev, open: false }))}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary btn-sm font-weight-bold px-3"
+                    disabled={editStaffModal.saving}
+                  >
+                    {editStaffModal.saving ? (
+                      <span>
+                        <i className="fas fa-spinner fa-spin mr-1"></i> Saving Changes...
+                      </span>
+                    ) : (
+                      <span>
+                        <i className="fas fa-save mr-1"></i> Save Changes
+                      </span>
+                    )}
                   </button>
                 </div>
               </form>

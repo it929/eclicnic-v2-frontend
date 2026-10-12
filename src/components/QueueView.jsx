@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import VitalsModal from './VitalsModal';
+import { showToast } from './Toast';
 
 export default function QueueView({ queues: initialQueues = [], onSelectPatient, onOpenNewPatient, onRefreshQueues }) {
   const [queues, setQueues] = useState(initialQueues);
   const [loading, setLoading] = useState(false);
   const [filterType, setFilterType] = useState('all');
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
+  const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
+  const [selectedQueueItem, setSelectedQueueItem] = useState(null);
   const [patientsList, setPatientsList] = useState([]);
   const [purposesList, setPurposesList] = useState([]);
   const [newQueue, setNewQueue] = useState({
@@ -40,7 +44,7 @@ export default function QueueView({ queues: initialQueues = [], onSelectPatient,
   const handleCreateQueue = async (e) => {
     e.preventDefault();
     if (!newQueue.patient) {
-      alert('Please select a patient to queue.');
+      showToast('Please select a patient to queue.', 'warning', 'Missing Patient');
       return;
     }
     try {
@@ -55,19 +59,26 @@ export default function QueueView({ queues: initialQueues = [], onSelectPatient,
         purpose: 'General Consultation',
         visit_type: 'New-case',
       });
+      showToast('Patient added to consultation queue successfully!', 'success', 'Queue Updated');
       loadQueues();
     } catch (err) {
-      alert('Error adding patient to queue: ' + (err.response?.data?.detail || err.message));
+      showToast('Error adding patient to queue: ' + (err.response?.data?.detail || err.message), 'danger', 'Queue Error');
     }
   };
 
   const handleCallNext = async (queueId) => {
     try {
       await api.updateQueue(queueId, { waiting_status: 1 });
+      showToast('Patient called into active consultation!', 'success', 'Queue Updated');
       loadQueues();
     } catch (err) {
-      alert('Error updating queue status: ' + (err.response?.data?.detail || err.message));
+      showToast('Error updating queue status: ' + (err.response?.data?.detail || err.message), 'danger', 'Queue Error');
     }
+  };
+
+  const handleTakeVitals = (queueItem) => {
+    setSelectedQueueItem(queueItem);
+    setIsVitalsModalOpen(true);
   };
 
   const activeQueues = queues.filter((q) => {
@@ -201,28 +212,61 @@ export default function QueueView({ queues: initialQueues = [], onSelectPatient,
                   {activeQueues.map((q, idx) => (
                     <tr key={q.id || idx}>
                       <td className="font-weight-bold text-center">{idx + 1}</td>
-                      <td className="font-weight-bold text-primary">{q.patient_name || 'Patient'}</td>
-                      <td className="text-danger font-weight-bold">{q.hospital_number || '-'}</td>
-                      <td>{q.purpose || q.visit_type || 'General Consultation'}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-link p-0 font-weight-bold text-primary text-left"
+                          style={{ textDecoration: 'none' }}
+                          onClick={() => onSelectPatient && onSelectPatient(q)}
+                          title="View Patient Details"
+                        >
+                          {q.patient_name || 'Patient'}
+                        </button>
+                      </td>
+                      <td>
+                        <span className="text-danger font-weight-bold hospital-badge" style={{ fontSize: '0.85rem' }}>
+                          {q.hospital_number || '-'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge badge-light border text-dark font-weight-normal px-2 py-1">
+                          {q.purpose || q.visit_type || 'General Consultation'}
+                        </span>
+                      </td>
                       <td>{q.attendant_name || 'Nurse Desk'}</td>
                       <td>
                         {q.waiting_status === 1 ? (
-                          <span className="badge badge-success">In Consultation</span>
+                          <span className="badge badge-success px-2 py-1">In Consultation</span>
                         ) : (
-                          <span className="badge badge-warning">Waiting</span>
+                          <span className="badge badge-warning px-2 py-1">Waiting</span>
                         )}
                       </td>
                       <td>
                         {q.waiting_status === 0 ? (
-                          <button
-                            className="btn btn-sm btn-success py-0 px-2 mr-1"
-                            title="Call Patient into Consultation"
-                            onClick={() => handleCallNext(q.id)}
-                          >
-                            <i className="fas fa-check mr-1"></i> Call Next
-                          </button>
+                          <div className="btn-group btn-group-sm">
+                            <button
+                              className="btn btn-sm btn-success py-1 px-2"
+                              title="Call Patient into Consultation"
+                              onClick={() => handleCallNext(q.id)}
+                            >
+                              <i className="fas fa-check mr-1"></i> Call Next
+                            </button>
+                            <button
+                              className="btn btn-sm btn-outline-primary py-1 px-2 font-weight-bold"
+                              title="Take Vitals immediately"
+                              onClick={() => handleTakeVitals(q)}
+                            >
+                              <i className="fas fa-heartbeat mr-1"></i> Take Vitals
+                            </button>
+                          </div>
                         ) : (
-                          <span className="badge badge-light border text-muted">Active</span>
+                          <button
+                            className="btn btn-sm btn-primary py-1 px-3 shadow-sm font-weight-bold"
+                            title="Record Patient Vital Signs"
+                            onClick={() => handleTakeVitals(q)}
+                          >
+                            <i className="fas fa-heartbeat mr-1"></i> Take Vitals
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -281,11 +325,6 @@ export default function QueueView({ queues: initialQueues = [], onSelectPatient,
                     onChange={(e) => setNewQueue({ ...newQueue, purpose: e.target.value })}
                   />
                   <datalist id="purposes-list">
-                    <option value="General Consultation" />
-                    <option value="Vital Signs" />
-                    <option value="Doctor Review" />
-                    <option value="Follow-up Visit" />
-                    <option value="Specialist Consultation" />
                     {purposesList.map((purp) => (
                       <option key={purp.id} value={purp.purpose} />
                     ))}
@@ -320,6 +359,21 @@ export default function QueueView({ queues: initialQueues = [], onSelectPatient,
           </div>
         </>
       )}
+
+      {/* Vitals Recording Modal */}
+      <VitalsModal
+        isOpen={isVitalsModalOpen}
+        patient={selectedQueueItem}
+        queueItem={selectedQueueItem}
+        onClose={() => {
+          setIsVitalsModalOpen(false);
+          setSelectedQueueItem(null);
+        }}
+        onVitalsSaved={() => {
+          loadQueues();
+          if (onRefreshQueues) onRefreshQueues();
+        }}
+      />
     </div>
   );
 }

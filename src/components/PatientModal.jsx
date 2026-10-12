@@ -12,18 +12,28 @@ const ALLERGY_PRESETS = [
   'Asthma / Atopy',
 ];
 
-const generateMRN = () => {
-  const num = Math.floor(1000 + Math.random() * 9000);
-  return `ISL-${num}`;
+const extractMRNNumber = (mrn) => {
+  const match = (mrn || '').match(/\d{4,}/);
+  return match ? match[0] : null;
+};
+
+const generateMRN = (sponsorCode = '', existingNumber = null) => {
+  const num = existingNumber || Math.floor(1000 + Math.random() * 9000);
+  const code = (sponsorCode || '').trim().toUpperCase();
+  return code ? `${code}/ISL-${num}` : `ISL-${num}`;
 };
 
 export default function PatientModal({
   isOpen,
   onClose,
   onPatientCreated,
+  onPatientSaved,
+  onScheduleAppointmentRequested,
+  patientToEdit = null,
   categories = [],
   isSidebarCollapsed = false,
 }) {
+  const isEditMode = !!patientToEdit;
   const [activeTab, setActiveTab] = useState('demographics'); // 'demographics' | 'contact' | 'billing'
 
   const [formData, setFormData] = useState({
@@ -45,6 +55,7 @@ export default function PatientModal({
     phone_numbers: '',
     allergies: '',
     auto_route_to_vitals: true,
+    schedule_appointment_after: true,
   });
 
   const [internalCategories, setInternalCategories] = useState(categories || []);
@@ -56,34 +67,62 @@ export default function PatientModal({
   const [error, setError] = useState(null);
   const [tabErrors, setTabErrors] = useState({});
 
-  // Reset or initialize state whenever modal opens
+  // Reset or initialize state whenever modal opens or patientToEdit changes
   useEffect(() => {
     if (isOpen) {
-      setFormData({
-        surname: '',
-        first_name: '',
-        other_name: '',
-        dob: '',
-        gender: 'Male',
-        patient_type: 'Single',
-        hospital_number: generateMRN(),
-        phone_number: '',
-        email_address: '',
-        address: '',
-        category: '',
-        sponsor: '',
-        plan: '',
-        insurance_policy_number: '',
-        relationship_to_patient: '',
-        phone_numbers: '',
-        allergies: '',
-        auto_route_to_vitals: true,
-      });
+      if (patientToEdit) {
+        const catId = patientToEdit.category?.id || patientToEdit.category || '';
+        const spId = patientToEdit.sponsor?.id || patientToEdit.sponsor || '';
+        const planId = patientToEdit.plan?.id || patientToEdit.plan || '';
+        setFormData({
+          surname: patientToEdit.surname || '',
+          first_name: patientToEdit.first_name || '',
+          other_name: patientToEdit.other_name || '',
+          dob: patientToEdit.dob || '',
+          gender: patientToEdit.gender || 'Male',
+          patient_type: patientToEdit.patient_type || 'Single',
+          hospital_number: patientToEdit.hospital_number || '',
+          phone_number: patientToEdit.phone_number || '',
+          email_address: patientToEdit.email_address || '',
+          address: patientToEdit.address || '',
+          category: catId ? String(catId) : '',
+          sponsor: spId ? String(spId) : '',
+          plan: planId ? String(planId) : '',
+          insurance_policy_number: patientToEdit.insurance_policy_number || '',
+          relationship_to_patient: patientToEdit.relationship_to_patient || '',
+          phone_numbers: patientToEdit.phone_numbers || '',
+          allergies: patientToEdit.allergies || '',
+          auto_route_to_vitals: false,
+          schedule_appointment_after: false,
+        });
+      } else {
+        setFormData({
+          surname: '',
+          first_name: '',
+          other_name: '',
+          dob: '',
+          gender: 'Male',
+          patient_type: 'Single',
+          hospital_number: generateMRN(),
+          phone_number: '',
+          email_address: '',
+          address: '',
+          category: '',
+          sponsor: '',
+          plan: '',
+          insurance_policy_number: '',
+          relationship_to_patient: '',
+          phone_numbers: '',
+          allergies: '',
+          auto_route_to_vitals: true,
+          schedule_appointment_after: true,
+        });
+      }
       setActiveTab('demographics');
       setError(null);
       setTabErrors({});
     }
-  }, [isOpen]);
+  }, [isOpen, patientToEdit]);
 
   // Handle ESC key to dismiss modal
   useEffect(() => {
@@ -198,12 +237,33 @@ export default function PatientModal({
       if (name === 'category') {
         next.sponsor = '';
         next.plan = '';
+        if (!isEditMode) {
+          const existingNum = extractMRNNumber(prev.hospital_number);
+          next.hospital_number = generateMRN('', existingNum);
+        }
       } else if (name === 'sponsor') {
         next.plan = '';
         if (value) {
           const sp = sponsors.find((s) => String(s.id) === String(value));
           if (sp?.category && !prev.category) {
-            next.category = sp.category;
+            next.category = String(sp.category);
+          }
+          if (!isEditMode) {
+            const existingNum = extractMRNNumber(prev.hospital_number);
+            next.hospital_number = generateMRN(sp?.code, existingNum);
+          }
+        } else if (!isEditMode) {
+          const existingNum = extractMRNNumber(prev.hospital_number);
+          next.hospital_number = generateMRN('', existingNum);
+        }
+      } else if (name === 'plan' && value && !prev.sponsor) {
+        const selectedPlan = plans.find((p) => String(p.id) === String(value));
+        if (selectedPlan?.sponsor) {
+          next.sponsor = String(selectedPlan.sponsor);
+          if (!isEditMode) {
+            const sp = sponsors.find((s) => String(s.id) === String(selectedPlan.sponsor));
+            const existingNum = extractMRNNumber(prev.hospital_number);
+            next.hospital_number = generateMRN(sp?.code, existingNum);
           }
         }
       }
@@ -219,9 +279,6 @@ export default function PatientModal({
     }
   };
 
-  const handleRegenerateMRN = () => {
-    setFormData((prev) => ({ ...prev, hospital_number: generateMRN() }));
-  };
 
   const handleToggleAllergy = (preset) => {
     if (preset.startsWith('NKDA')) {
@@ -280,8 +337,8 @@ export default function PatientModal({
     return true;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, triggerSchedule = false) => {
+    if (e && e.preventDefault) e.preventDefault();
     setError(null);
 
     if (!validateForm()) {
@@ -292,7 +349,8 @@ export default function PatientModal({
     try {
       setSaving(true);
 
-      const hospNum = formData.hospital_number?.trim() || String(Math.floor(1000 + Math.random() * 9000));
+      const sp = sponsors.find((s) => String(s.id) === String(formData.sponsor));
+      const hospNum = formData.hospital_number?.trim() || (isEditMode ? (patientToEdit?.hospital_number || generateMRN(sp?.code)) : generateMRN(sp?.code));
       const payload = {
         surname: formData.surname.trim(),
         first_name: formData.first_name.trim(),
@@ -313,26 +371,42 @@ export default function PatientModal({
         allergies: formData.allergies?.trim() || null,
       };
 
-      const created = await api.createPatient(payload);
+      let resultPatient;
+      if (isEditMode && patientToEdit?.id) {
+        resultPatient = await api.updatePatient(patientToEdit.id, payload);
+      } else {
+        resultPatient = await api.createPatient(payload);
 
-      // Immediately queue patient for vital signs if requested
-      if (formData.auto_route_to_vitals && created?.id) {
-        try {
-          await api.createQueue({
-            patient: created.id,
-            purpose: 'Vital Signs',
-            visit_type: 'New-case',
-          });
-        } catch (queueErr) {
-          console.warn('Patient saved, but vitals queueing encountered an issue:', queueErr);
+        // Immediately queue patient for vital signs if requested
+        if (formData.auto_route_to_vitals && resultPatient?.id) {
+          try {
+            await api.createQueue({
+              patient: resultPatient.id,
+              purpose: 'Vital Signs',
+              visit_type: 'New-case',
+            });
+          } catch (queueErr) {
+            console.warn('Patient saved, but vitals queueing encountered an issue:', queueErr);
+          }
         }
       }
 
-      onPatientCreated(created);
+      const shouldSchedule = triggerSchedule || (!isEditMode && formData.schedule_appointment_after);
+
+      if (onPatientSaved) {
+        onPatientSaved(resultPatient, { scheduleAppointment: shouldSchedule });
+      } else if (onPatientCreated) {
+        onPatientCreated(resultPatient, { scheduleAppointment: shouldSchedule });
+      }
+
+      if (shouldSchedule && onScheduleAppointmentRequested) {
+        onScheduleAppointmentRequested(resultPatient);
+      }
+
       onClose();
     } catch (err) {
       const respData = err.response?.data;
-      let msg = 'Failed to save patient. Please check the entered fields.';
+      let msg = isEditMode ? 'Failed to update patient. Please check the entered fields.' : 'Failed to save patient. Please check the entered fields.';
       if (respData) {
         if (typeof respData === 'string') {
           msg = respData;
@@ -378,16 +452,24 @@ export default function PatientModal({
         {/* Header - SB Admin 2 Gradient */}
         <div className="card-header py-3 bg-gradient-primary text-white d-flex justify-content-between align-items-center">
           <div className="d-flex align-items-center">
-            <i className="fas fa-user-plus mr-2 fa-lg text-white-50"></i>
+            <i className={`fas ${isEditMode ? 'fa-user-edit' : 'fa-user-plus'} mr-2 fa-lg text-white-50`}></i>
             <div>
-              <h6 className="m-0 font-weight-bold text-white">Register New Patient</h6>
-              <span className="small text-white-50">Electronic Health Record (EHR) Intake</span>
+              <h6 className="m-0 font-weight-bold text-white">
+                {isEditMode
+                  ? `Edit Patient: ${patientToEdit?.full_name || `${formData.surname} ${formData.first_name}`}`
+                  : 'Register New Patient'}
+              </h6>
+              <span className="small text-white-50">
+                {isEditMode
+                  ? 'Update Patient Demographics, Contact, and Sponsor Details'
+                  : 'Electronic Health Record (EHR) Intake'}
+              </span>
             </div>
           </div>
 
           <div className="d-flex align-items-center">
             <span className="badge badge-light text-primary font-weight-bold mr-3 py-1 px-2 d-none d-sm-inline-flex align-items-center">
-              <i className="fas fa-barcode mr-1"></i> MRN: {formData.hospital_number || 'Auto'}
+              <i className="fas fa-barcode mr-1"></i> MRN: {formData.hospital_number || (isEditMode ? patientToEdit?.hospital_number : 'Auto')}
             </span>
             <button
               type="button"
@@ -601,31 +683,31 @@ export default function PatientModal({
 
                     <div className="row">
                       <div className="col-md-6 form-group mb-0">
-                        <label className="small font-weight-bold text-gray-700 d-flex justify-content-between">
-                          <span>Hospital / MRN Number</span>
-                          <button
-                            type="button"
-                            className="btn btn-link btn-sm p-0 text-primary small text-decoration-none"
-                            onClick={handleRegenerateMRN}
-                          >
-                            <i className="fas fa-sync-alt mr-1"></i> Regenerate
-                          </button>
+                        <label className="small font-weight-bold text-gray-700 d-flex justify-content-between align-items-center">
+                          <span>
+                            Hospital / MRN Number{' '}
+                            <span className="badge badge-light border text-muted ml-1" style={{ fontSize: '0.68rem' }}>
+                              Auto-Generated
+                            </span>
+                          </span>
                         </label>
                         <div className="input-group input-group-sm patient-input-group">
                           <div className="input-group-prepend">
-                            <span className="input-group-text font-weight-bold">#</span>
+                            <span className="input-group-text font-weight-bold bg-light">#</span>
                           </div>
                           <input
                             type="text"
                             name="hospital_number"
-                            className="form-control form-control-sm font-weight-bold"
-                            placeholder="e.g. ISL-1024"
+                            className="form-control form-control-sm font-weight-bold bg-light text-dark"
+                            style={{ cursor: 'not-allowed' }}
+                            placeholder="e.g. ISL-1024 or AMH/ISL-4563"
                             value={formData.hospital_number}
-                            onChange={handleChange}
+                            disabled
+                            readOnly
                           />
                         </div>
                         <small className="form-text text-muted">
-                          Auto-generated unique record ID or enter existing paper chart number.
+                          Auto-generated MRN. Automatically prefixes the sponsor code when a sponsor is selected.
                         </small>
                       </div>
                     </div>
@@ -799,7 +881,7 @@ export default function PatientModal({
                         <small className="form-text text-muted">
                           {selectedSponsorObj?.code ? (
                             <span className="text-primary font-weight-bold">
-                              Code: {selectedSponsorObj.code}
+                              Code: {selectedSponsorObj.code} &bull; MRN: {formData.hospital_number}
                             </span>
                           ) : (
                             'HMO or Corporate Retainer'
@@ -846,7 +928,7 @@ export default function PatientModal({
                           </label>
                           {selectedSponsorObj?.code && (
                             <span className="badge badge-warning text-dark font-mono px-2 py-0">
-                              HMO Code: {selectedSponsorObj.code}
+                              Sponsor Code: {selectedSponsorObj.code}
                             </span>
                           )}
                         </div>
@@ -908,31 +990,61 @@ export default function PatientModal({
                   </div>
                 </div>
 
-                <div className="card border-left-info shadow-sm mb-2">
-                  <div className="card-body py-2 d-flex align-items-center justify-content-between">
-                    <div className="d-flex align-items-center">
-                      <div className="custom-control custom-switch mr-3">
-                        <input
-                          type="checkbox"
-                          className="custom-control-input cursor-pointer"
-                          id="autoRouteVitals"
-                          name="auto_route_to_vitals"
-                          checked={formData.auto_route_to_vitals}
-                          onChange={handleChange}
-                        />
-                        <label className="custom-control-label cursor-pointer" htmlFor="autoRouteVitals"></label>
-                      </div>
-                      <div>
-                        <strong className="d-block text-gray-800 small">
-                          <i className="fas fa-stethoscope mr-1 text-info"></i> Automatically Queue for Nurse Triage / Vitals
-                        </strong>
-                        <span className="text-muted small">
-                          Routes patient to the vital signs queue immediately upon intake.
-                        </span>
+                {!isEditMode && (
+                  <>
+                    <div className="card border-left-success shadow-sm mb-2">
+                      <div className="card-body py-2 d-flex align-items-center justify-content-between">
+                        <div className="d-flex align-items-center">
+                          <div className="custom-control custom-switch mr-3">
+                            <input
+                              type="checkbox"
+                              className="custom-control-input cursor-pointer"
+                              id="scheduleApptAfterReg"
+                              name="schedule_appointment_after"
+                              checked={formData.schedule_appointment_after}
+                              onChange={handleChange}
+                            />
+                            <label className="custom-control-label cursor-pointer" htmlFor="scheduleApptAfterReg"></label>
+                          </div>
+                          <div>
+                            <strong className="d-block text-gray-800 small">
+                              <i className="fas fa-calendar-plus mr-1 text-success"></i> Schedule Patient for Appointment Immediately
+                            </strong>
+                            <span className="text-muted small">
+                              Seamlessly opens appointment scheduling booking after saving this patient.
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+
+                    <div className="card border-left-info shadow-sm mb-2">
+                      <div className="card-body py-2 d-flex align-items-center justify-content-between">
+                        <div className="d-flex align-items-center">
+                          <div className="custom-control custom-switch mr-3">
+                            <input
+                              type="checkbox"
+                              className="custom-control-input cursor-pointer"
+                              id="autoRouteVitals"
+                              name="auto_route_to_vitals"
+                              checked={formData.auto_route_to_vitals}
+                              onChange={handleChange}
+                            />
+                            <label className="custom-control-label cursor-pointer" htmlFor="autoRouteVitals"></label>
+                          </div>
+                          <div>
+                            <strong className="d-block text-gray-800 small">
+                              <i className="fas fa-stethoscope mr-1 text-info"></i> Automatically Queue for Nurse Triage / Vitals
+                            </strong>
+                            <span className="text-muted small">
+                              Routes patient to the vital signs queue immediately upon intake.
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1000,6 +1112,18 @@ export default function PatientModal({
                 </button>
               )}
 
+              {!isEditMode && (
+                <button
+                  type="button"
+                  className="btn btn-success btn-sm px-3 shadow-sm font-weight-bold mr-2"
+                  disabled={saving}
+                  onClick={(e) => handleSubmit(e, true)}
+                  title="Register new patient and immediately open appointment scheduling modal"
+                >
+                  <i className="fas fa-calendar-plus mr-1"></i> Register & Schedule Appointment
+                </button>
+              )}
+
               <button
                 type="submit"
                 className="btn btn-primary btn-sm px-3 shadow-sm font-weight-bold"
@@ -1007,11 +1131,11 @@ export default function PatientModal({
               >
                 {saving ? (
                   <span>
-                    <i className="fas fa-spinner fa-spin mr-1"></i> Saving Patient...
+                    <i className="fas fa-spinner fa-spin mr-1"></i> {isEditMode ? 'Saving Changes...' : 'Saving Patient...'}
                   </span>
                 ) : (
                   <span>
-                    <i className="fas fa-check-circle mr-1"></i> Save Patient Record
+                    <i className="fas fa-check-circle mr-1"></i> {isEditMode ? 'Save Changes' : 'Save Patient Only'}
                   </span>
                 )}
               </button>

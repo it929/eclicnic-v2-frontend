@@ -20,9 +20,18 @@ export default function LoginPage({ onLoginSuccess }) {
       setError(null);
       await onLoginSuccess(username.trim(), password);
     } catch (err) {
+      console.error('Login error:', err);
+      const networkOrServerError =
+        err.message === 'Network Error' || !err.response
+          ? 'Cannot connect to backend server. Please verify your API URL and CORS settings.'
+          : err.response?.status >= 500
+          ? 'Server error occurred during login. Please check server logs.'
+          : null;
+
       setError(
         err.response?.data?.detail ||
         err.response?.data?.message ||
+        networkOrServerError ||
         'Invalid Staff ID or Password. Please try again.'
       );
     } finally {

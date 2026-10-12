@@ -338,7 +338,17 @@ export default function Topbar({
             <div className="position-relative">
               <img
                 className="img-profile rounded-circle"
-                src="/admin-img/undraw_profile.svg"
+                src={
+                  user?.avatar_url ||
+                  (user?.avatar && user.avatar !== 'image/avatar.svg'
+                    ? user.avatar.startsWith('http') || user.avatar.startsWith('/')
+                      ? user.avatar
+                      : `/media/${user.avatar}`
+                    : '/admin-img/undraw_profile.svg')
+                }
+                onError={(e) => {
+                  e.currentTarget.src = '/admin-img/undraw_profile.svg';
+                }}
                 alt="User Profile"
                 style={{
                   width: '34px',
