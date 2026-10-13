@@ -249,6 +249,115 @@ export const api = {
     return res.data;
   },
 
+  async getDiagnoses(params = {}) {
+    const res = await client.get('/diagnoses/', { params });
+    return res.data?.results || res.data || [];
+  },
+
+  async createDiagnosis(data) {
+    const res = await client.post('/diagnoses/', data);
+    return res.data;
+  },
+
+  async updateDiagnosis(id, data) {
+    const res = await client.patch(`/diagnoses/${id}/`, data);
+    return res.data;
+  },
+
+  async deleteDiagnosis(id) {
+    const res = await client.delete(`/diagnoses/${id}/`);
+    return res.data;
+  },
+
+  async bulkImportDiagnoses(formDataOrPayload) {
+    const isFormData = formDataOrPayload instanceof FormData;
+    const config = isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
+    const res = await client.post('/diagnoses/bulk-import/', formDataOrPayload, config);
+    return res.data;
+  },
+
+  async downloadDiagnosesTemplate() {
+    const res = await client.get('/diagnoses/download-template/', { responseType: 'blob' });
+    return res.data;
+  },
+
+  // Presenting Complaints Directory & Search
+  async getComplaints(params = {}) {
+    const res = await client.get('/complaints/', { params });
+    return res.data?.results || res.data || [];
+  },
+
+  async createComplaint(data) {
+    const res = await client.post('/complaints/', data);
+    return res.data;
+  },
+
+  async updateComplaint(id, data) {
+    const res = await client.patch(`/complaints/${id}/`, data);
+    return res.data;
+  },
+
+  async deleteComplaint(id) {
+    const res = await client.delete(`/complaints/${id}/`);
+    return res.data;
+  },
+
+  async getComplaintCategories() {
+    const res = await client.get('/complaints/categories/');
+    return res.data || [];
+  },
+
+  async bulkImportComplaints(formDataOrPayload) {
+    const isFormData = formDataOrPayload instanceof FormData;
+    const config = isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
+    const res = await client.post('/complaints/bulk-import/', formDataOrPayload, config);
+    return res.data;
+  },
+
+  async downloadComplaintsTemplate() {
+    const res = await client.get('/complaints/download-template/', { responseType: 'blob' });
+    return res.data;
+  },
+
+  async searchWhoIcd11(query) {
+    if (!query || !String(query).trim()) return [];
+    const term = String(query).trim();
+    try {
+      const res = await client.get('/diagnoses/who-icd11/', {
+        params: { search: term },
+      });
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        return res.data;
+      }
+    } catch (err) {
+      console.warn('Backend who-icd11 lookup failed, falling back to direct WHO NIH endpoint', err);
+    }
+
+    // Direct fallback to NIH ICD-11 service
+    try {
+      const directUrl = `https://clinicaltables.nlm.nih.gov/api/icd11_codes/v3/search?terms=${encodeURIComponent(term)}&maxList=25`;
+      const fallbackRes = await fetch(directUrl);
+      const data = await fallbackRes.json();
+      if (Array.isArray(data) && Array.isArray(data[3])) {
+        return data[3].map((item) => ({
+          code: item[0],
+          title: item[1],
+          category: 'WHO ICD-11',
+          source: 'WHO ICD-11 (Official)',
+          is_local: false,
+        }));
+      }
+    } catch (directErr) {
+      console.error('Direct ICD-11 fallback error:', directErr);
+    }
+    return [];
+  },
+
+  async importIcd11Diagnosis(data) {
+    const res = await client.post('/diagnoses/import-icd11/', data);
+    return res.data;
+  },
+
   async getVisitPurposes(params = {}) {
     const res = await client.get('/visit-purposes/', { params });
     return res.data?.results || res.data;
@@ -619,8 +728,18 @@ export const api = {
     return res.data;
   },
 
-  async getLabCharges() {
-    const res = await client.get('/tariffs/lab-charges/');
+  async getLabCharges(params = {}) {
+    const res = await client.get('/tariffs/lab-charges/', { params });
+    return res.data;
+  },
+
+  async createLabCharge(data) {
+    const res = await client.post('/tariffs/lab-charges/', data);
+    return res.data;
+  },
+
+  async updateLabCharge(id, data) {
+    const res = await client.put(`/tariffs/lab-charges/${id}/`, data);
     return res.data;
   },
 
@@ -634,8 +753,33 @@ export const api = {
     return res.data;
   },
 
-  async getRadiologyCharges() {
-    const res = await client.get('/tariffs/radiology-charges/');
+  async bulkImportLabCharges(formData) {
+    const res = await client.post('/tariffs/lab-charges/bulk-upload/', formData, {
+      headers: formData instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {},
+    });
+    return res.data;
+  },
+
+  async downloadLabChargesTemplate(params = {}) {
+    const res = await client.get('/tariffs/lab-charges/download-template/', {
+      params,
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+
+  async getRadiologyCharges(params = {}) {
+    const res = await client.get('/tariffs/radiology-charges/', { params });
+    return res.data;
+  },
+
+  async createRadiologyCharge(data) {
+    const res = await client.post('/tariffs/radiology-charges/', data);
+    return res.data;
+  },
+
+  async updateRadiologyCharge(id, data) {
+    const res = await client.put(`/tariffs/radiology-charges/${id}/`, data);
     return res.data;
   },
 
@@ -646,6 +790,21 @@ export const api = {
 
   async deleteRadiologyCharge(id) {
     const res = await client.delete(`/tariffs/radiology-charges/${id}/`);
+    return res.data;
+  },
+
+  async bulkImportRadiologyCharges(formData) {
+    const res = await client.post('/tariffs/radiology-charges/bulk-upload/', formData, {
+      headers: formData instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {},
+    });
+    return res.data;
+  },
+
+  async downloadRadiologyChargesTemplate(params = {}) {
+    const res = await client.get('/tariffs/radiology-charges/download-template/', {
+      params,
+      responseType: 'blob',
+    });
     return res.data;
   },
 
@@ -664,8 +823,8 @@ export const api = {
     return res.data;
   },
 
-  async getOtherServices() {
-    const res = await client.get('/tariffs/other-services/');
+  async getOtherServices(params = {}) {
+    const res = await client.get('/tariffs/other-services/', { params });
     return res.data;
   },
 
@@ -679,8 +838,18 @@ export const api = {
     return res.data;
   },
 
-  async getMedicationFees() {
-    const res = await client.get('/tariffs/medication-fees/');
+  async getMedicationFees(params = {}) {
+    const res = await client.get('/tariffs/medication-fees/', { params });
+    return res.data;
+  },
+
+  async createMedicationFee(data) {
+    const res = await client.post('/tariffs/medication-fees/', data);
+    return res.data;
+  },
+
+  async updateMedicationFee(id, data) {
+    const res = await client.put(`/tariffs/medication-fees/${id}/`, data);
     return res.data;
   },
 
@@ -691,6 +860,21 @@ export const api = {
 
   async deleteMedicationFee(id) {
     const res = await client.delete(`/tariffs/medication-fees/${id}/`);
+    return res.data;
+  },
+
+  async bulkImportMedicationFees(formData) {
+    const res = await client.post('/tariffs/medication-fees/bulk-upload/', formData, {
+      headers: formData instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {},
+    });
+    return res.data;
+  },
+
+  async downloadMedicationFeesTemplate(params = {}) {
+    const res = await client.get('/tariffs/medication-fees/download-template/', {
+      params,
+      responseType: 'blob',
+    });
     return res.data;
   },
 

@@ -224,7 +224,7 @@ export default function AppointmentsView({
   onOpenVisitPurposes,
   onNavigate,
 }) {
-  const [activeFilter, setActiveFilter] = useState(initialFilter); // 'today' | 'upcoming' | 'completed' | 'cancelled' | 'expired' | 'all'
+  const [activeFilter, setActiveFilter] = useState(initialFilter === 'expired' ? 'all' : initialFilter); // 'today' | 'upcoming' | 'completed' | 'cancelled' | 'all'
   const [appointments, setAppointments] = useState([]);
   const [summary, setSummary] = useState({
     total: 0,
@@ -262,6 +262,11 @@ export default function AppointmentsView({
   const [selectedPatientForConsultation, setSelectedPatientForConsultation] = useState(null);
   const [selectedAppointmentForConsultation, setSelectedAppointmentForConsultation] = useState(null);
 
+  // Confirmation Modal for Cancelling Appointment
+  const [appointmentToCancel, setAppointmentToCancel] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState('Patient Request / Patient Called');
+
   // Multi-tier Dropdown action state
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [activeSubmenu, setActiveSubmenu] = useState('encounter'); // 'encounter' | 'requests' | 'billing' | 'admin'
@@ -287,7 +292,7 @@ export default function AppointmentsView({
   // Sync initial filter prop if changed from sidebar
   useEffect(() => {
     if (initialFilter) {
-      setActiveFilter(initialFilter);
+      setActiveFilter(initialFilter === 'expired' ? 'all' : initialFilter);
     }
   }, [initialFilter]);
 
@@ -325,20 +330,47 @@ export default function AppointmentsView({
     loadAppointments();
   }, [loadAppointments]);
 
-  // Cancel Appointment
-  const handleCancelAppointment = async (appt) => {
-    if (!window.confirm(`Are you sure you want to cancel the appointment for ${appt.patient_name || 'this patient'}?`)) {
+  // Cancel Appointment - Open Professional Modal Dialog
+  const handleCancelAppointment = (appt) => {
+    const hasAction = Boolean(
+      appt.has_action_taken ||
+      appt.can_cancel === false ||
+      appt.has_vitals ||
+      appt.today_vitals
+    );
+    if (hasAction) {
+      showToast(
+        'Cannot cancel this appointment: Clinical actions (e.g. vitals taken, consultation held, or requests placed) have already been initiated.',
+        'warning',
+        'Cancellation Not Allowed'
+      );
       return;
     }
+    setAppointmentToCancel(appt);
+    setCancellationReason('Patient Request / Patient Called');
+  };
+
+  // Perform Appointment Cancellation
+  const handleConfirmCancelAppointment = async () => {
+    if (!appointmentToCancel) return;
     try {
-      setActionLoadingId(appt.id);
-      await api.cancelAppointment(appt.id);
-      showToast('Appointment cancelled successfully.', 'warning', 'Appointment Cancelled');
+      setCancelling(true);
+      await api.cancelAppointment(appointmentToCancel.id);
+      showToast(
+        `Appointment for ${appointmentToCancel.patient_name || 'patient'} has been cancelled successfully.`,
+        'warning',
+        'Appointment Cancelled'
+      );
+      setAppointmentToCancel(null);
       loadAppointments();
     } catch (err) {
-      showToast(err.response?.data?.detail || err.message || 'Error cancelling appointment', 'danger', 'Error');
+      showToast(
+        err.response?.data?.detail || err.message || 'Error cancelling appointment',
+        'danger',
+        'Cancellation Failed'
+      );
     } finally {
-      setActionLoadingId(null);
+      setCancelling(false);
     }
   };
 
@@ -647,6 +679,28 @@ export default function AppointmentsView({
             </button>
           )}
 
+          {onNavigate && (
+            <button
+              type="button"
+              className="btn btn-sm btn-white border shadow-sm font-weight-bold d-inline-flex align-items-center px-3"
+              style={{
+                height: '38px',
+                borderRadius: '8px',
+                borderColor: '#cbd5e1',
+                color: '#334155',
+                fontSize: '0.84rem',
+                backgroundColor: '#ffffff',
+                transition: 'all 0.15s ease-in-out',
+                whiteSpace: 'nowrap',
+              }}
+              onClick={() => onNavigate('diagnoses-setup')}
+              title="Manage clinical diagnoses library, ICD-10 codes, and bulk upload Excel/CSV"
+            >
+              <i className="fas fa-book-medical text-primary mr-2" style={{ fontSize: '0.85rem' }}></i>
+              <span>Diagnoses Directory</span>
+            </button>
+          )}
+
           {onOpenNewPatient && (
             <button
               type="button"
@@ -761,7 +815,7 @@ export default function AppointmentsView({
           </div>
         </div>
 
-        {/* Cancelled / Expired */}
+        {/* Cancelled */}
         <div className="col-xl-3 col-md-6 mb-3">
           <div
             className={`card border-left-danger shadow-sm h-100 py-2 cursor-pointer transition-all ${activeFilter === 'cancelled' ? 'bg-danger-soft border-2' : ''}`}
@@ -771,10 +825,10 @@ export default function AppointmentsView({
               <div className="row no-gutters align-items-center">
                 <div className="col mr-2">
                   <div className="text-xs font-weight-bold text-danger text-uppercase mb-1">
-                    Cancelled / Expired
+                    Cancelled
                   </div>
                   <div className="h4 mb-0 font-weight-bold text-gray-800">
-                    {summary.cancelled} <span className="text-muted small font-weight-normal">({summary.expired} exp)</span>
+                    {summary.cancelled}
                   </div>
                 </div>
                 <div className="col-auto">
@@ -1019,8 +1073,13 @@ export default function AppointmentsView({
                   appointments.map((appt, idx) => {
                     const isCompleted = appt.completed === 1;
                     const isCancelled = appt.completed === 2;
-                    const isExpired = appt.is_expired;
                     const isTodayAppt = appt.is_today;
+                    const hasActionTaken = Boolean(
+                      appt.has_action_taken ||
+                      appt.can_cancel === false ||
+                      appt.has_vitals ||
+                      appt.today_vitals
+                    );
 
                     let statusBadge = (
                       <span className="badge badge-primary px-2 py-1">
@@ -1043,12 +1102,6 @@ export default function AppointmentsView({
                       statusBadge = (
                         <span className="badge badge-info px-2 py-1">
                           <i className="fas fa-bell mr-1"></i> Today's Visit
-                        </span>
-                      );
-                    } else if (isExpired) {
-                      statusBadge = (
-                        <span className="badge badge-danger px-2 py-1">
-                          <i className="fas fa-times-circle mr-1"></i> Expired
                         </span>
                       );
                     }
@@ -1484,7 +1537,36 @@ export default function AppointmentsView({
                                     {!isCompleted && !isCancelled && renderSubmenuItem('Mark Completed', <i className="fas fa-check text-success mr-2"></i>, () => handleCompleteAppointment(appt))}
                                     {renderSubmenuItem('Reschedule Appointment', <i className="fas fa-calendar-alt text-warning mr-2"></i>, () => handleReschedule(appt))}
                                     {renderDivider()}
-                                    {!isCompleted && !isCancelled && renderSubmenuItem('Cancel Appointment', <i className="fas fa-times text-danger mr-2"></i>, () => handleCancelAppointment(appt), true)}
+                                    {!isCompleted && !isCancelled && (
+                                      hasActionTaken ? (
+                                        <div
+                                          className="px-3 py-2 mx-1 rounded d-flex align-items-center text-muted"
+                                          style={{
+                                            fontSize: '0.80rem',
+                                            cursor: 'not-allowed',
+                                            backgroundColor: '#f8fafc',
+                                            border: '1px dashed #cbd5e1',
+                                            userSelect: 'none',
+                                          }}
+                                          title="Cannot cancel: Clinical actions (vitals taken, consultation, or requests) have already been initiated for this appointment"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            showToast(
+                                              'This appointment cannot be cancelled because clinical actions (vitals taken, consultation, or requests) have already been initiated.',
+                                              'warning',
+                                              'Cancellation Not Allowed'
+                                            );
+                                          }}
+                                        >
+                                          <span style={{ width: '22px', display: 'inline-flex', alignItems: 'center' }}>
+                                            <i className="fas fa-lock text-secondary mr-2"></i>
+                                          </span>
+                                          <span className="text-secondary font-weight-500">Cancel (Action Taken)</span>
+                                        </div>
+                                      ) : (
+                                        renderSubmenuItem('Cancel Appointment', <i className="fas fa-times text-danger mr-2"></i>, () => handleCancelAppointment(appt), true)
+                                      )
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1695,6 +1777,204 @@ export default function AppointmentsView({
           }}
           onNavigate={onNavigate}
         />
+      )}
+
+      {/* Professional Appointment Cancellation Confirmation Modal */}
+      {appointmentToCancel && (
+        <>
+          <div
+            className="modal-backdrop-custom"
+            onClick={() => !cancelling && setAppointmentToCancel(null)}
+            style={{ zIndex: 1060, backgroundColor: 'rgba(15, 23, 42, 0.65)' }}
+          ></div>
+          <div
+            className="card shadow-lg modal-custom"
+            style={{
+              maxWidth: '520px',
+              width: '92%',
+              zIndex: 1070,
+              borderRadius: '16px',
+              border: '1px solid #fecaca',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Header */}
+            <div
+              className="py-3 px-4 d-flex justify-content-between align-items-center"
+              style={{
+                background: 'linear-gradient(135deg, #fff1f2 0%, #fee2e2 100%)',
+                borderBottom: '1px solid #fecaca',
+              }}
+            >
+              <div className="d-flex align-items-center">
+                <div
+                  className="d-flex align-items-center justify-content-center mr-3 shadow-sm"
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '12px',
+                    backgroundColor: '#fee2e2',
+                    color: '#dc2626',
+                    border: '1px solid #fca5a5',
+                    flexShrink: 0,
+                  }}
+                >
+                  <i className="fas fa-calendar-times fa-lg"></i>
+                </div>
+                <div>
+                  <h5 className="mb-0 font-weight-bold text-gray-900" style={{ fontSize: '1.05rem', letterSpacing: '-0.01em' }}>
+                    Cancel Appointment
+                  </h5>
+                  <div className="text-muted small" style={{ fontSize: '0.78rem' }}>
+                    Confirm removal from active schedule
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="close text-muted"
+                disabled={cancelling}
+                onClick={() => setAppointmentToCancel(null)}
+                style={{ fontSize: '1.4rem', opacity: 0.7 }}
+                title="Close modal"
+              >
+                <span>&times;</span>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="card-body p-4" style={{ backgroundColor: '#ffffff' }}>
+              {/* Patient Details Summary Card */}
+              <div
+                className="p-3 mb-3 rounded border"
+                style={{
+                  backgroundColor: '#f8fafc',
+                  borderColor: '#e2e8f0',
+                  fontSize: '0.86rem',
+                }}
+              >
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <div className="font-weight-bold text-dark d-flex align-items-center">
+                    <i className="fas fa-user-circle text-primary mr-1.5"></i>
+                    <span>{appointmentToCancel.patient_name || 'N/A'}</span>
+                  </div>
+                  {appointmentToCancel.hospital_number && (
+                    <span className="badge badge-light border text-secondary font-weight-normal px-2 py-1">
+                      {appointmentToCancel.hospital_number}
+                    </span>
+                  )}
+                </div>
+
+                <div className="d-flex flex-wrap text-muted small" style={{ gap: '12px' }}>
+                  <div>
+                    <i className="fas fa-calendar-day text-info mr-1"></i>
+                    <strong className="text-gray-800">{appointmentToCancel.arrival_date || '-'}</strong>
+                  </div>
+                  {appointmentToCancel.arrival_time && (
+                    <div>
+                      <i className="fas fa-clock text-info mr-1"></i>
+                      <strong className="text-gray-800">{appointmentToCancel.arrival_time.substring(0, 5)}</strong>
+                    </div>
+                  )}
+                  {appointmentToCancel.purpose && (
+                    <div>
+                      <i className="fas fa-stethoscope text-primary mr-1"></i>
+                      <span>{appointmentToCancel.purpose}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Warning Notice */}
+              <div
+                className="d-flex align-items-start p-3 mb-3 rounded"
+                style={{
+                  backgroundColor: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  color: '#92400e',
+                  fontSize: '0.82rem',
+                  lineHeight: '1.45',
+                }}
+              >
+                <i className="fas fa-exclamation-triangle text-warning mr-2 mt-0.5" style={{ fontSize: '0.95rem' }}></i>
+                <div>
+                  Are you sure you want to cancel this booking? This will update the status to <strong>Cancelled</strong> and withdraw the appointment from the clinic's daily active queue.
+                </div>
+              </div>
+
+              {/* Cancellation Reason Dropdown */}
+              <div className="form-group mb-0">
+                <label className="font-weight-bold small text-gray-700 mb-1">
+                  Cancellation Reason <span className="text-muted font-weight-normal">(Optional audit log)</span>:
+                </label>
+                <select
+                  className="form-control form-control-sm"
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                  disabled={cancelling}
+                  style={{ borderRadius: '8px', fontSize: '0.84rem', borderColor: '#cbd5e1' }}
+                >
+                  <option value="Patient Request / Patient Called">Patient Request / Patient Called</option>
+                  <option value="Patient Did Not Show (No-Show)">Patient Did Not Show (No-Show)</option>
+                  <option value="Rescheduled to Another Date">Rescheduled to Another Date</option>
+                  <option value="Doctor / Clinician Unavailable">Doctor / Clinician Unavailable</option>
+                  <option value="Emergency Transfer / Admitted">Emergency Transfer / Admitted</option>
+                  <option value="Duplicate Booking Entry">Duplicate Booking Entry</option>
+                  <option value="Other Administrative Reason">Other Administrative Reason</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              className="py-3 px-4 d-flex justify-content-between align-items-center"
+              style={{
+                backgroundColor: '#f8fafc',
+                borderTop: '1px solid #e2e8f0',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-sm btn-white border shadow-sm font-weight-bold px-3"
+                style={{
+                  borderRadius: '8px',
+                  borderColor: '#cbd5e1',
+                  color: '#475569',
+                  backgroundColor: '#ffffff',
+                }}
+                disabled={cancelling}
+                onClick={() => setAppointmentToCancel(null)}
+              >
+                Keep Appointment
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-sm btn-danger shadow-sm font-weight-bold px-4 d-inline-flex align-items-center"
+                style={{
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  boxShadow: '0 2px 6px rgba(220, 38, 38, 0.35)',
+                }}
+                disabled={cancelling}
+                onClick={handleConfirmCancelAppointment}
+              >
+                {cancelling ? (
+                  <>
+                    <i className="fas fa-circle-notch fa-spin mr-1.5"></i>
+                    <span>Cancelling...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-ban mr-1.5"></i>
+                    <span>Yes, Cancel Appointment</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

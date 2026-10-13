@@ -816,12 +816,6 @@ export default function Sidebar({
                   </a>
                   <a
                     className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('appointments', 'expired')}
-                  >
-                    <i className="fas fa-history mr-1"></i> Expired Appointments
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
                     onClick={() => setActiveTab('appointments', 'all')}
                   >
                     <i className="fas fa-notes-medical mr-1"></i> Appointments Reviews
@@ -832,6 +826,18 @@ export default function Sidebar({
                     onClick={() => setActiveTab('visit-purposes')}
                   >
                     <i className="fas fa-stethoscope mr-1"></i> Visit Purposes Setup
+                  </a>
+                  <a
+                    className="collapse-item cursor-pointer text-primary font-weight-bold"
+                    onClick={() => setActiveTab('diagnoses-setup')}
+                  >
+                    <i className="fas fa-book-medical mr-1"></i> Medical Diagnoses Directory
+                  </a>
+                  <a
+                    className="collapse-item cursor-pointer text-success font-weight-bold"
+                    onClick={() => setActiveTab('complaints-setup')}
+                  >
+                    <i className="fas fa-clipboard-list mr-1"></i> Presenting Complaints Directory
                   </a>
                 </div>
               )}
