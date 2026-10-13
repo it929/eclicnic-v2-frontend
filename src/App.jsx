@@ -20,6 +20,8 @@ import PatientDetailModal from './components/PatientDetailModal';
 import AppointmentsView from './components/AppointmentsView';
 import ScheduleAppointmentModal from './components/ScheduleAppointmentModal';
 import VisitPurposesView from './components/VisitPurposesView';
+import DiagnosesSetupView from './components/DiagnosesSetupView';
+import ComplaintsSetupView from './components/ComplaintsSetupView';
 import LoginModal from './components/LoginModal';
 import ToastContainer from './components/Toast';
 import api from './services/api';
@@ -520,6 +522,18 @@ export default function App() {
 
               {activeTab === 'visit-purposes' && (
                 <VisitPurposesView
+                  onBack={() => setActiveTab('appointments')}
+                />
+              )}
+
+              {activeTab === 'diagnoses-setup' && (
+                <DiagnosesSetupView
+                  onBack={() => setActiveTab('appointments')}
+                />
+              )}
+
+              {activeTab === 'complaints-setup' && (
+                <ComplaintsSetupView
                   onBack={() => setActiveTab('appointments')}
                 />
               )}
