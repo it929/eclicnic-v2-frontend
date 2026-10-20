@@ -12,6 +12,31 @@ const ALLERGY_PRESETS = [
   'Asthma / Atopy',
 ];
 
+export const NEXT_OF_KIN_RELATIONSHIPS = [
+  'Spouse',
+  'Husband',
+  'Wife',
+  'Father',
+  'Mother',
+  'Son',
+  'Daughter',
+  'Brother',
+  'Sister',
+  'Child',
+  'Parent',
+  'Sibling',
+  'Guardian',
+  'Uncle',
+  'Aunt',
+  'Cousin',
+  'Nephew',
+  'Niece',
+  'Friend',
+  'Colleague / Employer',
+  'Other Relative',
+  'Other',
+];
+
 const extractMRNNumber = (mrn) => {
   const match = (mrn || '').match(/\d{4,}/);
   return match ? match[0] : null;
@@ -51,8 +76,12 @@ export default function PatientModal({
     sponsor: '',
     plan: '',
     insurance_policy_number: '',
+    full_name: '',
     relationship_to_patient: '',
     phone_numbers: '',
+    next_of_kin_name: '',
+    next_of_kin_relationship: '',
+    next_of_kin_phone: '',
     allergies: '',
     auto_route_to_vitals: true,
     schedule_appointment_after: true,
@@ -89,8 +118,12 @@ export default function PatientModal({
           sponsor: spId ? String(spId) : '',
           plan: planId ? String(planId) : '',
           insurance_policy_number: patientToEdit.insurance_policy_number || '',
-          relationship_to_patient: patientToEdit.relationship_to_patient || '',
-          phone_numbers: patientToEdit.phone_numbers || '',
+          full_name: patientToEdit.next_of_kin_name || patientToEdit.full_name || '',
+          relationship_to_patient: patientToEdit.next_of_kin_relationship || patientToEdit.relationship_to_patient || '',
+          phone_numbers: patientToEdit.next_of_kin_phone || patientToEdit.phone_numbers || '',
+          next_of_kin_name: patientToEdit.next_of_kin_name || patientToEdit.full_name || '',
+          next_of_kin_relationship: patientToEdit.next_of_kin_relationship || patientToEdit.relationship_to_patient || '',
+          next_of_kin_phone: patientToEdit.next_of_kin_phone || patientToEdit.phone_numbers || '',
           allergies: patientToEdit.allergies || '',
           auto_route_to_vitals: false,
           schedule_appointment_after: false,
@@ -111,8 +144,12 @@ export default function PatientModal({
           sponsor: '',
           plan: '',
           insurance_policy_number: '',
+          full_name: '',
           relationship_to_patient: '',
           phone_numbers: '',
+          next_of_kin_name: '',
+          next_of_kin_relationship: '',
+          next_of_kin_phone: '',
           allergies: '',
           auto_route_to_vitals: true,
           schedule_appointment_after: true,
@@ -267,6 +304,22 @@ export default function PatientModal({
           }
         }
       }
+
+      // Keep explicit next_of_kin fields and legacy fields synchronized
+      if (name === 'next_of_kin_name') {
+        next.full_name = value;
+      } else if (name === 'full_name') {
+        next.next_of_kin_name = value;
+      } else if (name === 'next_of_kin_relationship') {
+        next.relationship_to_patient = value;
+      } else if (name === 'relationship_to_patient') {
+        next.next_of_kin_relationship = value;
+      } else if (name === 'next_of_kin_phone') {
+        next.phone_numbers = value;
+      } else if (name === 'phone_numbers') {
+        next.next_of_kin_phone = value;
+      }
+
       return next;
     });
 
@@ -366,8 +419,12 @@ export default function PatientModal({
         sponsor: formData.sponsor ? Number(formData.sponsor) : null,
         plan: formData.plan ? Number(formData.plan) : null,
         insurance_policy_number: formData.insurance_policy_number?.trim() || null,
-        relationship_to_patient: formData.relationship_to_patient?.trim() || null,
-        phone_numbers: formData.phone_numbers?.trim() || null,
+        next_of_kin_name: (formData.next_of_kin_name || formData.full_name)?.trim() || null,
+        next_of_kin_relationship: (formData.next_of_kin_relationship || formData.relationship_to_patient)?.trim() || null,
+        next_of_kin_phone: (formData.next_of_kin_phone || formData.phone_numbers)?.trim() || null,
+        full_name: (formData.next_of_kin_name || formData.full_name)?.trim() || null,
+        relationship_to_patient: (formData.next_of_kin_relationship || formData.relationship_to_patient)?.trim() || null,
+        phone_numbers: (formData.next_of_kin_phone || formData.phone_numbers)?.trim() || null,
         allergies: formData.allergies?.trim() || null,
       };
 
@@ -456,7 +513,7 @@ export default function PatientModal({
             <div>
               <h6 className="m-0 font-weight-bold text-white">
                 {isEditMode
-                  ? `Edit Patient: ${patientToEdit?.full_name || `${formData.surname} ${formData.first_name}`}`
+                  ? `Edit Patient: ${(formData.surname || patientToEdit?.surname) ? `${formData.surname || patientToEdit?.surname} ${formData.first_name || patientToEdit?.first_name || ''}`.trim() : (patientToEdit?.patient_name || 'Patient')}`
                   : 'Register New Patient'}
               </h6>
               <span className="small text-white-50">
@@ -790,21 +847,51 @@ export default function PatientModal({
                       <i className="fas fa-heartbeat mr-1"></i> Emergency Contact & Next of Kin
                     </h6>
                     <div className="row">
-                      <div className="col-md-6 form-group">
+                      <div className="col-md-5 form-group">
                         <label className="small font-weight-bold text-gray-700">
-                          Next of Kin Name & Relationship
+                          Next of Kin Name
                         </label>
-                        <input
-                          type="text"
-                          name="relationship_to_patient"
-                          className="form-control form-control-sm"
-                          placeholder="e.g. Jane Doe (Spouse/Brother)"
-                          value={formData.relationship_to_patient}
-                          onChange={handleChange}
-                        />
+                        <div className="input-group input-group-sm patient-input-group">
+                          <div className="input-group-prepend">
+                            <span className="input-group-text"><i className="fas fa-user-shield"></i></span>
+                          </div>
+                          <input
+                            type="text"
+                            name="next_of_kin_name"
+                            className="form-control form-control-sm"
+                            placeholder="e.g. Jane Doe"
+                            value={formData.next_of_kin_name || formData.full_name || ''}
+                            onChange={handleChange}
+                          />
+                        </div>
                       </div>
 
-                      <div className="col-md-6 form-group">
+                      <div className="col-md-3 form-group">
+                        <label className="small font-weight-bold text-gray-700">
+                          Relationship
+                        </label>
+                        <select
+                          name="next_of_kin_relationship"
+                          className="custom-select custom-select-sm"
+                          value={formData.next_of_kin_relationship || formData.relationship_to_patient || ''}
+                          onChange={handleChange}
+                        >
+                          <option value="">-- Select Relationship --</option>
+                          {NEXT_OF_KIN_RELATIONSHIPS.map((rel) => (
+                            <option key={rel} value={rel}>
+                              {rel}
+                            </option>
+                          ))}
+                          {(formData.next_of_kin_relationship || formData.relationship_to_patient) &&
+                            !NEXT_OF_KIN_RELATIONSHIPS.includes(formData.next_of_kin_relationship || formData.relationship_to_patient) && (
+                              <option value={formData.next_of_kin_relationship || formData.relationship_to_patient}>
+                                {formData.next_of_kin_relationship || formData.relationship_to_patient}
+                              </option>
+                            )}
+                        </select>
+                      </div>
+
+                      <div className="col-md-4 form-group">
                         <label className="small font-weight-bold text-gray-700">
                           Emergency Contact Phone Number
                         </label>
@@ -814,10 +901,10 @@ export default function PatientModal({
                           </div>
                           <input
                             type="tel"
-                            name="phone_numbers"
+                            name="next_of_kin_phone"
                             className="form-control form-control-sm"
                             placeholder="e.g. 0802 345 6789"
-                            value={formData.phone_numbers}
+                            value={formData.next_of_kin_phone || formData.phone_numbers || ''}
                             onChange={handleChange}
                           />
                         </div>

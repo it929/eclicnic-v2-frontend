@@ -302,8 +302,8 @@ export default function Dashboard({
                     {recentPatients && recentPatients.length > 0 ? (
                       recentPatients.map((p) => {
                         const fullName =
-                          p.full_name ||
-                          `${p.surname || ''} ${p.first_name || ''}`.trim() ||
+                          p.patient_name ||
+                          `${p.surname || ''} ${p.first_name || ''} ${p.other_name || ''}`.trim() ||
                           'Unnamed Patient';
                         const initials = getInitials(fullName);
                         const catBadge = getCategoryBadgeClass(p.category_name || '');

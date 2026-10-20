@@ -65,6 +65,7 @@ export default function TariffPlansView({
   const [bulkPreviewRows, setBulkPreviewRows] = useState([]);
   const [bulkDownloadingTemplate, setBulkDownloadingTemplate] = useState(false);
   const [bulkUploadDragOver, setBulkUploadDragOver] = useState(false);
+  const [loadingGeneralPrices, setLoadingGeneralPrices] = useState(false);
 
   // Professional Delete Dialog State
   const [deleteDialog, setDeleteDialog] = useState({
@@ -126,8 +127,8 @@ export default function TariffPlansView({
   const handleDownloadLabTemplate = async (sponsorId = null, planId = null) => {
     try {
       setBulkDownloadingTemplate(true);
-      const sId = sponsorId || bulkUploadSponsor || labSponsorFilter;
-      const pId = planId || bulkUploadPlan || labPlanFilter;
+      const sId = sponsorId !== null ? sponsorId : (bulkUploadSponsor || labSponsorFilter);
+      const pId = planId !== null ? planId : (bulkUploadPlan || labPlanFilter);
       const params = {};
       if (sId) params.sponsor = sId;
       if (pId) params.plan = pId;
@@ -136,17 +137,53 @@ export default function TariffPlansView({
       const url = window.URL.createObjectURL(new Blob([blobData], { type: 'text/csv' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `lab_tariffs_template.csv`);
+      const filename = sId === 'general' ? 'lab_tariffs_template_general.csv' : 'lab_tariffs_template.csv';
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
-      showAlert('Laboratory tariffs CSV template downloaded successfully.', 'success');
+      showAlert(
+        sId === 'general'
+          ? 'General Laboratory Tariffs CSV template downloaded successfully.'
+          : 'Laboratory tariffs CSV template downloaded successfully.',
+        'success'
+      );
     } catch (err) {
       console.error('Error downloading lab template:', err);
       showAlert('Failed to download lab template. Please try again.', 'danger');
     } finally {
       setBulkDownloadingTemplate(false);
+    }
+  };
+
+  // Load / Initialize General Medication Prices from Pharmacy Formulary & Inventory
+  const handleLoadGeneralPrices = async () => {
+    try {
+      setLoadingGeneralPrices(true);
+      const res = await api.loadGeneralMedicationPrices();
+      showAlert(res.detail || 'General medication prices loaded successfully!', 'success');
+      await loadMedicationFees();
+    } catch (err) {
+      console.error('Error loading general medication prices:', err);
+      showAlert(err.response?.data?.detail || 'Failed to load general medication prices.', 'danger');
+    } finally {
+      setLoadingGeneralPrices(false);
+    }
+  };
+
+  // Load / Initialize General Laboratory Prices
+  const handleLoadGeneralLabPrices = async () => {
+    try {
+      setLoadingGeneralPrices(true);
+      const res = await api.loadGeneralLabPrices();
+      showAlert(res.detail || 'General laboratory prices loaded successfully!', 'success');
+      await loadLabCharges();
+    } catch (err) {
+      console.error('Error loading general lab prices:', err);
+      showAlert(err.response?.data?.detail || 'Failed to load general laboratory prices.', 'danger');
+    } finally {
+      setLoadingGeneralPrices(false);
     }
   };
 
@@ -837,13 +874,14 @@ export default function TariffPlansView({
       formData = item ? { plan_name: item.plan_name, price: item.price } : { plan_name: '', price: '' };
     } else if (entityType === 'lab') {
       title = mode === 'create' ? 'Add Laboratory Investigation Charge' : 'Update Laboratory Charge';
+      const isItemGeneral = item && (item.is_general || (!item.sponsor_id && !item.plan_id));
       formData = item
         ? {
             item: item.item,
             item_id: item.item_id,
             rate: item.rate,
-            sponsor_id: item.sponsor_id || '',
-            plan_id: item.plan_id || '',
+            sponsor_id: isItemGeneral ? 'general' : (item.sponsor_id || ''),
+            plan_id: isItemGeneral ? '' : (item.plan_id || ''),
           }
         : {
             item: '',
@@ -928,16 +966,22 @@ export default function TariffPlansView({
         showAlert(res.detail || 'Registration fee saved successfully!');
         loadRegFees();
       } else if (entityType === 'lab') {
-        if (!formData.sponsor_id) {
-          showAlert('Please select a Sponsor / HMO for this laboratory charge.', 'warning');
-          return;
+        const payload = { ...formData };
+        if (formData.sponsor_id === 'general') {
+          payload.sponsor_id = '';
+          payload.plan_id = '';
+        } else {
+          if (!payload.sponsor_id) {
+            showAlert('Please select a Sponsor / HMO or General Tariff for this laboratory charge.', 'warning');
+            return;
+          }
+          if (!payload.plan_id) {
+            showAlert('Please select a Coverage Plan for this laboratory charge.', 'warning');
+            return;
+          }
         }
-        if (!formData.plan_id) {
-          showAlert('Please select a Coverage Plan for this laboratory charge.', 'warning');
-          return;
-        }
-        if (mode === 'create') res = await api.createLabCharge(formData);
-        else res = await api.updateLabCharge(id, formData);
+        if (mode === 'create') res = await api.createLabCharge(payload);
+        else res = await api.updateLabCharge(id, payload);
         showAlert(res.detail || 'Laboratory investigation charge saved successfully!');
         loadLabCharges();
       } else if (entityType === 'radiology') {
@@ -964,16 +1008,14 @@ export default function TariffPlansView({
         showAlert(res.detail || 'Other service fee saved successfully!');
         loadOtherServices();
       } else if (entityType === 'medication') {
-        if (!formData.sponsor_id) {
-          showAlert('Please select a Sponsor / HMO for this medication tariff.', 'warning');
-          return;
-        }
-        if (!formData.plan_id) {
-          showAlert('Please select a Coverage Plan for this medication tariff.', 'warning');
-          return;
-        }
-        if (mode === 'create') res = await api.createMedicationFee(formData);
-        else res = await api.updateMedicationFee(id, formData);
+        const isGeneral = formData.sponsor_id === 'general' || !formData.sponsor_id;
+        const payload = {
+          ...formData,
+          sponsor_id: isGeneral ? '' : formData.sponsor_id,
+          plan_id: isGeneral ? '' : formData.plan_id,
+        };
+        if (mode === 'create') res = await api.createMedicationFee(payload);
+        else res = await api.updateMedicationFee(id, payload);
         showAlert(res.detail || 'Medication tariff saved successfully!');
         loadMedicationFees();
       } else if (entityType === 'package') {
@@ -1489,6 +1531,24 @@ export default function TariffPlansView({
                 </div>
               </div>
               <div className="d-flex flex-wrap align-items-center" style={{ gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-success font-weight-bold d-inline-flex align-items-center shadow-xs px-3"
+                  style={{
+                    borderRadius: '6px',
+                    fontSize: '0.80rem',
+                    height: '32px',
+                    backgroundColor: '#ffffff',
+                    borderColor: '#10b981',
+                    color: '#059669',
+                  }}
+                  onClick={handleLoadGeneralPrices}
+                  disabled={loadingGeneralPrices}
+                  title="Initialize / load general price tariffs from hospital pharmacy formulary"
+                >
+                  <i className={`fas ${loadingGeneralPrices ? 'fa-spinner fa-spin' : 'fa-sync-alt'}`} style={{ marginRight: '6px' }}></i>
+                  Load General Prices
+                </button>
                 <button
                   type="button"
                   className="btn btn-sm btn-white font-weight-bold d-inline-flex align-items-center shadow-xs px-3"
@@ -2301,13 +2361,17 @@ export default function TariffPlansView({
             !searchTerm ||
             l.item.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (l.item_id && l.item_id.toLowerCase().includes(searchTerm.toLowerCase()));
-          const matchesSponsor = !labSponsorFilter || String(l.sponsor_id) === String(labSponsorFilter);
+          const matchesSponsor =
+            !labSponsorFilter ||
+            (labSponsorFilter === 'general' ? (!l.sponsor_id && !l.plan_id) || l.is_general : String(l.sponsor_id) === String(labSponsorFilter));
           const matchesPlan = !labPlanFilter || String(l.plan_id) === String(labPlanFilter);
           return matchesSearch && matchesSponsor && matchesPlan;
         });
 
         const isLabFilterActive = Boolean(labSponsorFilter || labPlanFilter || searchTerm);
-        const activeLabSponsorObj = sponsors.find((s) => String(s.id) === String(labSponsorFilter));
+        const activeLabSponsorObj = labSponsorFilter === 'general'
+          ? { id: 'general', name: 'General / Out-of-Pocket (Self Pay)', code: 'GENERAL' }
+          : sponsors.find((s) => String(s.id) === String(labSponsorFilter));
         const activeLabPlanObj = plans.find((p) => String(p.id) === String(labPlanFilter));
 
         return (
@@ -2340,13 +2404,25 @@ export default function TariffPlansView({
                       </span>
                     </div>
                     <div className="text-muted small mt-1">
-                      Manage diagnostic test tariffs attached to HMO Sponsors and Coverage Plans for clinical orders.
+                      Manage diagnostic test tariffs attached to HMO Sponsors, Coverage Plans, and General Out-of-Pocket pricing.
                     </div>
                   </div>
                 </div>
 
                 {/* Header Action Buttons */}
                 <div className="mt-2 mt-md-0 flex-shrink-0 d-flex flex-wrap align-items-center" style={{ gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-success font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
+                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
+                    onClick={handleLoadGeneralLabPrices}
+                    disabled={loadingGeneralPrices}
+                    title="Initialize baseline hospital laboratory charges for self-pay patients"
+                  >
+                    <i className={`fas ${loadingGeneralPrices ? 'fa-spinner fa-spin' : 'fa-magic'} mr-2 text-success`}></i>
+                    Load General Prices
+                  </button>
+
                   <button
                     type="button"
                     className="btn btn-sm btn-outline-secondary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
@@ -2432,6 +2508,7 @@ export default function TariffPlansView({
                       style={{ borderRadius: '0 6px 6px 0' }}
                     >
                       <option value="">All Sponsors / HMOs ({sponsors.length})</option>
+                      <option value="general">⭐ General / Out-of-Pocket (Self Pay - No HMO)</option>
                       {sponsors.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name} {s.code ? `(${s.code})` : ''}
@@ -2600,7 +2677,25 @@ export default function TariffPlansView({
                           </div>
                         </td>
                         <td className="align-middle">
-                          {item.sponsor_name && item.sponsor_name !== 'General / Self' ? (
+                          {item.is_general || (!item.sponsor_id && !item.plan_id) || item.sponsor_name === 'General / Self' ? (
+                            <div className="d-inline-flex flex-column align-items-start">
+                              <span
+                                className="badge px-2.5 py-1 font-weight-bold shadow-xs"
+                                style={{
+                                  backgroundColor: '#ecfdf5',
+                                  color: '#065f46',
+                                  border: '1px solid #a7f3d0',
+                                  borderRadius: '6px',
+                                  fontSize: '0.78rem',
+                                }}
+                              >
+                                <i className="fas fa-star mr-1 text-warning"></i> General / Out-of-Pocket
+                              </span>
+                              <span className="badge badge-light border text-success mt-1" style={{ fontSize: '0.70rem' }}>
+                                <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                              </span>
+                            </div>
+                          ) : item.sponsor_name && item.sponsor_name !== 'General / Self' ? (
                             <div className="d-inline-flex flex-column align-items-start">
                               <div className="d-flex align-items-center flex-wrap" style={{ gap: '6px' }}>
                                 {item.sponsor_code && (
@@ -2643,20 +2738,29 @@ export default function TariffPlansView({
                           )}
                         </td>
                         <td className="align-middle">
-                          <span
-                            className="badge px-2.5 py-1 font-weight-bold shadow-xs d-inline-flex align-items-center"
-                            style={{
-                              backgroundColor: '#ede9fe',
-                              color: '#6d28d9',
-                              border: '1px solid #ddd6fe',
-                              borderRadius: '6px',
-                              fontSize: '0.82rem',
-                              letterSpacing: '0.01em',
-                            }}
-                          >
-                            <i className="fas fa-layer-group mr-1.5" style={{ fontSize: '0.75rem', opacity: 0.85 }}></i>
-                            {item.plan_name || 'All Covered Plans'}
-                          </span>
+                          {item.is_general || (!item.sponsor_id && !item.plan_id) ? (
+                            <span
+                              className="badge px-2.5 py-1 font-weight-bold shadow-xs text-muted border bg-light"
+                              style={{ borderRadius: '6px', fontSize: '0.80rem' }}
+                            >
+                              General Tariff (All Patients)
+                            </span>
+                          ) : (
+                            <span
+                              className="badge px-2.5 py-1 font-weight-bold shadow-xs d-inline-flex align-items-center"
+                              style={{
+                                backgroundColor: '#ede9fe',
+                                color: '#6d28d9',
+                                border: '1px solid #ddd6fe',
+                                borderRadius: '6px',
+                                fontSize: '0.82rem',
+                                letterSpacing: '0.01em',
+                              }}
+                            >
+                              <i className="fas fa-layer-group mr-1.5" style={{ fontSize: '0.75rem', opacity: 0.85 }}></i>
+                              {item.plan_name || 'All Covered Plans'}
+                            </span>
+                          )}
                         </td>
                         <td className="align-middle">
                           <div className="d-inline-flex flex-column">
@@ -3817,8 +3921,16 @@ export default function TariffPlansView({
             m.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (m.product_id && m.product_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
             (m.sku && m.sku.toLowerCase().includes(searchTerm.toLowerCase()));
-          const matchesSponsor = !medicationSponsorFilter || String(m.sponsor_id) === String(medicationSponsorFilter);
-          const matchesPlan = !medicationPlanFilter || String(m.plan_id) === String(medicationPlanFilter);
+          const matchesSponsor = !medicationSponsorFilter
+            ? true
+            : medicationSponsorFilter === 'general'
+              ? (m.is_general || !m.sponsor_id)
+              : String(m.sponsor_id) === String(medicationSponsorFilter);
+          const matchesPlan = !medicationPlanFilter
+            ? true
+            : medicationPlanFilter === 'general'
+              ? (!m.plan_id || m.is_general)
+              : String(m.plan_id) === String(medicationPlanFilter);
           return matchesSearch && matchesSponsor && matchesPlan;
         });
 
@@ -3859,39 +3971,6 @@ export default function TariffPlansView({
                       Manage formulary medication rates attached to HMO Sponsors and Coverage Plans for clinical prescribing.
                     </div>
                   </div>
-                </div>
-
-                {/* Header Action Buttons */}
-                <div className="mt-2 mt-md-0 flex-shrink-0 d-flex flex-wrap align-items-center" style={{ gap: '8px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-secondary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => handleDownloadTemplate()}
-                    disabled={bulkDownloadingTemplate}
-                    title="Download sample CSV template for medication tariffs"
-                  >
-                    <i className={`fas ${bulkDownloadingTemplate ? 'fa-spinner fa-spin' : 'fa-download'} mr-2 text-primary`}></i>
-                    Download Template
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-primary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => openBulkUploadModal('medication')}
-                  >
-                    <i className="fas fa-file-upload mr-2 text-primary"></i> Bulk Upload Tariffs
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => openModal('medication', 'create')}
-                  >
-                    <i className="fas fa-plus-circle mr-2"></i> Add Medication Tariff
-                  </button>
                 </div>
               </div>
             </div>
@@ -3948,6 +4027,9 @@ export default function TariffPlansView({
                       style={{ borderRadius: '0 6px 6px 0' }}
                     >
                       <option value="">All Sponsors / HMOs ({sponsors.length})</option>
+                      <option value="general" className="font-weight-bold text-success">
+                        ⭐ General / Out-of-Pocket (Self Pay)
+                      </option>
                       {sponsors.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name} {s.code ? `(${s.code})` : ''}
@@ -4095,32 +4177,62 @@ export default function TariffPlansView({
                           </div>
                         </td>
                         <td>
-                          <span
-                            className="badge px-2 py-1 font-weight-bold shadow-sm"
-                            style={{
-                              backgroundColor: '#e0f2fe',
-                              color: '#0369a1',
-                              border: '1px solid #bae6fd',
-                              borderRadius: '6px',
-                            }}
-                          >
-                            <i className="fas fa-shield-alt mr-1"></i>
-                            {item.sponsor_name || 'General / Self'}
-                          </span>
+                          {item.is_general || !item.sponsor_id ? (
+                            <span
+                              className="badge px-2 py-1 font-weight-bold shadow-sm"
+                              style={{
+                                backgroundColor: '#fef3c7',
+                                color: '#92400e',
+                                border: '1px solid #fde68a',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              <i className="fas fa-wallet mr-1"></i>
+                              General / Out-of-Pocket
+                            </span>
+                          ) : (
+                            <span
+                              className="badge px-2 py-1 font-weight-bold shadow-sm"
+                              style={{
+                                backgroundColor: '#e0f2fe',
+                                color: '#0369a1',
+                                border: '1px solid #bae6fd',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              <i className="fas fa-shield-alt mr-1"></i>
+                              {item.sponsor_name || 'General / Self'}
+                            </span>
+                          )}
                         </td>
                         <td>
-                          <span
-                            className="badge px-2 py-1 font-weight-bold shadow-sm"
-                            style={{
-                              backgroundColor: '#ede9fe',
-                              color: '#6d28d9',
-                              border: '1px solid #ddd6fe',
-                              borderRadius: '6px',
-                            }}
-                          >
-                            <i className="fas fa-file-contract mr-1"></i>
-                            {item.plan_name || 'All Plans'}
-                          </span>
+                          {item.is_general || !item.plan_id ? (
+                            <span
+                              className="badge px-2 py-1 font-weight-bold shadow-sm"
+                              style={{
+                                backgroundColor: '#fffbeb',
+                                color: '#b45309',
+                                border: '1px solid #fde68a',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              <i className="fas fa-tag mr-1"></i>
+                              Pay from your purse
+                            </span>
+                          ) : (
+                            <span
+                              className="badge px-2 py-1 font-weight-bold shadow-sm"
+                              style={{
+                                backgroundColor: '#ede9fe',
+                                color: '#6d28d9',
+                                border: '1px solid #ddd6fe',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              <i className="fas fa-file-contract mr-1"></i>
+                              {item.plan_name || 'All Plans'}
+                            </span>
+                          )}
                         </td>
                         <td>
                           <span
@@ -4564,6 +4676,7 @@ export default function TariffPlansView({
                           required
                         >
                           <option value="">-- Select Sponsor / HMO --</option>
+                          <option value="general">⭐ General / Out-of-Pocket (Self Pay - No HMO)</option>
                           {sponsors.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name} {s.code ? `(${s.code})` : ''}
@@ -4571,47 +4684,59 @@ export default function TariffPlansView({
                           ))}
                         </select>
                         <small className="form-text text-muted">
-                          Select the HMO or sponsor who covers this laboratory tariff rate.
+                          Select the HMO or sponsor who covers this laboratory tariff rate, or select General / Out-of-Pocket.
                         </small>
                       </div>
 
-                      {/* Coverage Plan Selection */}
-                      <div className="form-group mb-3">
-                        <label className="small font-weight-bold text-dark d-flex justify-content-between">
-                          <span>
-                            Sponsor Coverage Plan <span className="text-danger">*</span>
-                          </span>
-                          <span className="text-muted" style={{ fontSize: '0.72rem' }}>e.g. AIICO SLIVER</span>
-                        </label>
-                        <select
-                          className="form-control"
-                          value={modalState.formData.plan_id || ''}
-                          onChange={(e) =>
-                            setModalState({
-                              ...modalState,
-                              formData: { ...modalState.formData, plan_id: e.target.value },
-                            })
-                          }
-                          required
+                      {/* Coverage Plan Selection or General Info Notice */}
+                      {modalState.formData.sponsor_id === 'general' ? (
+                        <div
+                          className="alert alert-info py-2.5 px-3 small mb-3 border-0 d-flex align-items-center"
+                          style={{ borderRadius: '8px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}
                         >
-                          <option value="">
-                            {modalState.formData.sponsor_id
-                              ? '-- Select Coverage Plan --'
-                              : '-- Select a Sponsor first --'}
-                          </option>
-                          {(modalState.formData.sponsor_id
-                            ? plans.filter((p) => String(p.sponsor) === String(modalState.formData.sponsor_id))
-                            : plans
-                          ).map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.plan} {p.code ? `(${p.code})` : ''}
+                          <i className="fas fa-info-circle mr-2 text-success" style={{ fontSize: '1rem' }}></i>
+                          <div>
+                            <strong>General Tariff (Pay from your purse):</strong> Baseline hospital rate for self-pay patients and when an HMO patient's plan does not cover this laboratory test.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="form-group mb-3">
+                          <label className="small font-weight-bold text-dark d-flex justify-content-between">
+                            <span>
+                              Sponsor Coverage Plan <span className="text-danger">*</span>
+                            </span>
+                            <span className="text-muted" style={{ fontSize: '0.72rem' }}>e.g. AIICO SLIVER</span>
+                          </label>
+                          <select
+                            className="form-control"
+                            value={modalState.formData.plan_id || ''}
+                            onChange={(e) =>
+                              setModalState({
+                                ...modalState,
+                                formData: { ...modalState.formData, plan_id: e.target.value },
+                              })
+                            }
+                            required
+                          >
+                            <option value="">
+                              {modalState.formData.sponsor_id
+                                ? '-- Select Coverage Plan --'
+                                : '-- Select a Sponsor first --'}
                             </option>
-                          ))}
-                        </select>
-                        <small className="form-text text-muted">
-                          Select the specific plan that qualifies for this test investigation fee.
-                        </small>
-                      </div>
+                            {(modalState.formData.sponsor_id
+                              ? plans.filter((p) => String(p.sponsor) === String(modalState.formData.sponsor_id))
+                              : plans
+                            ).map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.plan} {p.code ? `(${p.code})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <small className="form-text text-muted">
+                            Select the specific plan that qualifies for this test investigation fee.
+                          </small>
+                        </div>
+                      )}
 
                       <div className="form-group mb-3">
                         <label className="small font-weight-bold text-dark">
@@ -4908,10 +5033,11 @@ export default function TariffPlansView({
                           value={modalState.formData.sponsor_id || ''}
                           onChange={(e) => {
                             const newSponsorId = e.target.value;
-                            const matchingPlans = plans.filter((p) => String(p.sponsor) === String(newSponsorId));
-                            const resetPlan = matchingPlans.some((p) => String(p.id) === String(modalState.formData.plan_id))
+                            const isGen = newSponsorId === 'general';
+                            const matchingPlans = isGen ? [] : plans.filter((p) => String(p.sponsor) === String(newSponsorId));
+                            const resetPlan = isGen ? 'general' : (matchingPlans.some((p) => String(p.id) === String(modalState.formData.plan_id))
                               ? modalState.formData.plan_id
-                              : (matchingPlans.length > 0 ? matchingPlans[0].id : '');
+                              : (matchingPlans.length > 0 ? matchingPlans[0].id : ''));
                             setModalState({
                               ...modalState,
                               formData: {
@@ -4924,6 +5050,9 @@ export default function TariffPlansView({
                           required
                         >
                           <option value="">-- Select Sponsor / HMO --</option>
+                          <option value="general" className="font-weight-bold text-success">
+                            ⭐ General / Out-of-Pocket (Self-Pay - No HMO)
+                          </option>
                           {sponsors.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name} {s.code ? `(${s.code})` : ''}
@@ -4931,7 +5060,7 @@ export default function TariffPlansView({
                           ))}
                         </select>
                         <small className="form-text text-muted">
-                          Select the HMO, company retainer, or sponsor who covers this medication tariff.
+                          Select the HMO, company retainer, or General / Out-of-Pocket (Self-Pay).
                         </small>
                       </div>
 
@@ -4941,11 +5070,12 @@ export default function TariffPlansView({
                           <span>
                             Sponsor Coverage Plan <span className="text-danger">*</span>
                           </span>
-                          <span className="text-muted" style={{ fontSize: '0.72rem' }}>e.g. AIICO SILVER</span>
+                          <span className="text-muted" style={{ fontSize: '0.72rem' }}>e.g. AIICO SILVER or General</span>
                         </label>
                         <select
                           className="form-control"
                           value={modalState.formData.plan_id || ''}
+                          disabled={modalState.formData.sponsor_id === 'general'}
                           onChange={(e) =>
                             setModalState({
                               ...modalState,
@@ -4954,22 +5084,30 @@ export default function TariffPlansView({
                           }
                           required
                         >
-                          <option value="">
-                            {modalState.formData.sponsor_id
-                              ? '-- Select Coverage Plan --'
-                              : '-- Select a Sponsor first --'}
-                          </option>
-                          {(modalState.formData.sponsor_id
-                            ? plans.filter((p) => String(p.sponsor) === String(modalState.formData.sponsor_id))
-                            : plans
-                          ).map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.plan} {p.code ? `(${p.code})` : ''}
-                            </option>
-                          ))}
+                          {modalState.formData.sponsor_id === 'general' ? (
+                            <option value="general">General Price (Pay from your purse)</option>
+                          ) : (
+                            <>
+                              <option value="">
+                                {modalState.formData.sponsor_id
+                                  ? '-- Select Coverage Plan --'
+                                  : '-- Select a Sponsor first --'}
+                              </option>
+                              {(modalState.formData.sponsor_id
+                                ? plans.filter((p) => String(p.sponsor) === String(modalState.formData.sponsor_id))
+                                : plans
+                              ).map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.plan} {p.code ? `(${p.code})` : ''}
+                                </option>
+                              ))}
+                            </>
+                          )}
                         </select>
                         <small className="form-text text-muted">
-                          Select the specific tariff tier/plan (e.g. AIICO SILVER, AIICO GOLD, etc.).
+                          {modalState.formData.sponsor_id === 'general'
+                            ? 'General price applies to all self-pay patients paying from purse.'
+                            : 'Select the specific tariff tier/plan (e.g. AIICO SILVER, AIICO GOLD, etc.).'}
                         </small>
                       </div>
 
@@ -5215,8 +5353,12 @@ export default function TariffPlansView({
                           onChange={(e) => {
                             const newSponsorId = e.target.value;
                             setBulkUploadSponsor(newSponsorId);
-                            const matchingPlans = plans.filter((p) => String(p.sponsor) === String(newSponsorId));
-                            setBulkUploadPlan(matchingPlans.length > 0 ? matchingPlans[0].id : '');
+                            if (newSponsorId === 'general') {
+                              setBulkUploadPlan('');
+                            } else {
+                              const matchingPlans = plans.filter((p) => String(p.sponsor) === String(newSponsorId));
+                              setBulkUploadPlan(matchingPlans.length > 0 ? matchingPlans[0].id : '');
+                            }
                           }}
                         >
                           <option value="">
@@ -5224,6 +5366,7 @@ export default function TariffPlansView({
                               ? '-- Loading sponsors or auto-detect --'
                               : '-- Auto-detect from file or select --'}
                           </option>
+                          <option value="general">⭐ General / Out-of-Pocket (Self Pay - No HMO)</option>
                           {sponsors.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name} {s.code ? `(${s.code})` : ''}
@@ -5236,27 +5379,40 @@ export default function TariffPlansView({
                         <label className="small font-weight-bold text-muted mb-1">
                           Coverage Plan:
                         </label>
-                        <select
-                          className="form-control form-control-sm"
-                          value={bulkUploadPlan}
-                          onChange={(e) => setBulkUploadPlan(e.target.value)}
-                        >
-                          <option value="">-- Auto-detect from file or select --</option>
-                          {(bulkUploadSponsor
-                            ? plans.filter((p) => String(p.sponsor) === String(bulkUploadSponsor))
-                            : plans
-                          ).map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.plan} {p.code ? `(${p.code})` : ''}
-                            </option>
-                          ))}
-                        </select>
+                        {bulkUploadSponsor === 'general' ? (
+                          <select className="form-control form-control-sm bg-light" value="" disabled>
+                            <option value="">-- Not Applicable (General Out-of-Pocket) --</option>
+                          </select>
+                        ) : (
+                          <select
+                            className="form-control form-control-sm"
+                            value={bulkUploadPlan}
+                            onChange={(e) => setBulkUploadPlan(e.target.value)}
+                          >
+                            <option value="">-- Auto-detect from file or select --</option>
+                            {(bulkUploadSponsor
+                              ? plans.filter((p) => String(p.sponsor) === String(bulkUploadSponsor))
+                              : plans
+                            ).map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.plan} {p.code ? `(${p.code})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     </div>
-                    <small className="form-text text-muted mt-2" style={{ fontSize: '0.75rem' }}>
-                      <i className="fas fa-info-circle mr-1 text-primary"></i>
-                      If a row in your file leaves the <code>sponsor_code</code> or <code>plan_code</code> column empty, these selected defaults will be used.
-                    </small>
+                    {bulkUploadSponsor === 'general' ? (
+                      <div className="alert alert-success py-2 px-3 small mt-2 mb-0 border-0" style={{ borderRadius: '6px' }}>
+                        <i className="fas fa-check-circle mr-1.5 text-success"></i>
+                        <strong>General Tariff Mode:</strong> Tariffs in this file will be uploaded as baseline hospital out-of-pocket prices for self-pay patients and when HMO patients choose <em>"Pay from your purse"</em>.
+                      </div>
+                    ) : (
+                      <small className="form-text text-muted mt-2" style={{ fontSize: '0.75rem' }}>
+                        <i className="fas fa-info-circle mr-1 text-primary"></i>
+                        If a row in your file leaves the <code>sponsor_code</code> or <code>plan_code</code> column empty, these selected defaults will be used.
+                      </small>
+                    )}
                   </div>
 
                   {/* Step 2: Download Template Card */}

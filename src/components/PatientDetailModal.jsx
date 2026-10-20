@@ -50,7 +50,7 @@ export default function PatientDetailModal({ patient, onClose, onQueueUpdated, o
       });
       setQueueSuccess(true);
       showToast(
-        `Patient ${displayPatient.full_name || `${displayPatient.surname} ${displayPatient.first_name}`} queued for Nursing Vitals successfully!`,
+        `Patient ${displayPatient.surname ? `${displayPatient.surname} ${displayPatient.first_name || ''}`.trim() : (displayPatient.patient_name || 'Patient')} queued for Nursing Vitals successfully!`,
         'success',
         'Nursing Queue'
       );
@@ -165,7 +165,7 @@ export default function PatientDetailModal({ patient, onClose, onQueueUpdated, o
             />
             <div className="flex-grow-1">
               <h4 className="mb-1 font-weight-bold text-gray-900">
-                {displayPatient.full_name || `${displayPatient.surname || ''} ${displayPatient.first_name || ''}`.trim() || 'Patient'}
+                {(displayPatient.surname ? `${displayPatient.surname} ${displayPatient.first_name || ''} ${displayPatient.other_name || ''}`.trim() : null) || displayPatient.patient_name || 'Patient'}
               </h4>
               <div className="d-flex flex-wrap align-items-center text-muted small mt-1">
                 <span className="badge badge-primary mr-2 mb-1 px-2 py-1 shadow-sm font-weight-bold">
@@ -182,6 +182,15 @@ export default function PatientDetailModal({ patient, onClose, onQueueUpdated, o
                 <span className="mb-1">
                   Hospital No: <strong className="text-danger font-weight-bold">{displayPatient.hospital_number || 'N/A'}</strong>
                 </span>
+                {displayPatient.family_number && (
+                  <span className="mb-1">
+                    Family: <span className="badge badge-warning text-dark font-weight-bold px-2 py-0.5">
+                      <i className={`fas fa-${displayPatient.family_folder_type === 'hmo_group' ? 'users' : 'folder'} mr-1`}></i>
+                      {displayPatient.family_name} ({displayPatient.family_number})
+                      {displayPatient.family_member_suffix ? ` &bull; Code ${displayPatient.family_member_suffix}` : ''}
+                    </span>
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -229,8 +238,16 @@ export default function PatientDetailModal({ patient, onClose, onQueueUpdated, o
                     <strong className="text-gray-800">{displayPatient.email_address || 'None provided'}</strong>
                   </p>
                   <p className="mb-2 small d-flex justify-content-between">
+                    <span className="text-muted">Next of Kin:</span>
+                    <strong className="text-gray-800">{displayPatient.next_of_kin_name || displayPatient.full_name || '-'}</strong>
+                  </p>
+                  <p className="mb-2 small d-flex justify-content-between">
                     <span className="text-muted">Relationship:</span>
-                    <strong className="text-gray-800">{displayPatient.relationship_to_patient || '-'}</strong>
+                    <strong className="text-gray-800">{displayPatient.next_of_kin_relationship || displayPatient.relationship_to_patient || '-'}</strong>
+                  </p>
+                  <p className="mb-2 small d-flex justify-content-between">
+                    <span className="text-muted">Emergency Phone:</span>
+                    <strong className="text-gray-800">{displayPatient.next_of_kin_phone || displayPatient.phone_numbers || '-'}</strong>
                   </p>
                   <p className="mb-0 small d-flex justify-content-between">
                     <span className="text-muted">Registered By:</span>

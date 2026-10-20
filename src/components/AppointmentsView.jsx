@@ -315,7 +315,27 @@ export default function AppointmentsView({
         api.getAppointmentSummary().catch(() => null),
       ]);
 
-      setAppointments(res.results || res || []);
+      const items = res.results || res || [];
+      const sorted = [...items].sort((a, b) => {
+        // Keep active appointments above completed/cancelled for today's view
+        if (activeFilter === 'today' && (a.completed || 0) !== (b.completed || 0)) {
+          return (a.completed || 0) - (b.completed || 0);
+        }
+        // Most recent / current schedule first (date desc, time desc, id desc)
+        const dateA = a.arrival_date || '';
+        const dateB = b.arrival_date || '';
+        if (dateA !== dateB) {
+          return dateB.localeCompare(dateA);
+        }
+        const timeA = a.arrival_time || '00:00:00';
+        const timeB = b.arrival_time || '00:00:00';
+        if (timeA !== timeB) {
+          return timeB.localeCompare(timeA);
+        }
+        return (b.id || 0) - (a.id || 0);
+      });
+
+      setAppointments(sorted);
       if (sumRes) {
         setSummary(sumRes);
       }
@@ -657,50 +677,6 @@ export default function AppointmentsView({
 
         {/* Action Button Cluster */}
         <div className="d-flex align-items-center flex-wrap" style={{ gap: '10px' }}>
-          {onOpenVisitPurposes && (
-            <button
-              type="button"
-              className="btn btn-sm btn-white border shadow-sm font-weight-bold d-inline-flex align-items-center px-3"
-              style={{
-                height: '38px',
-                borderRadius: '8px',
-                borderColor: '#cbd5e1',
-                color: '#334155',
-                fontSize: '0.84rem',
-                backgroundColor: '#ffffff',
-                transition: 'all 0.15s ease-in-out',
-                whiteSpace: 'nowrap',
-              }}
-              onClick={onOpenVisitPurposes}
-              title="Manage appointment consultation purposes, tariffs, and bulk upload"
-            >
-              <i className="fas fa-stethoscope text-info mr-2" style={{ fontSize: '0.85rem' }}></i>
-              <span>Visit Purposes Setup</span>
-            </button>
-          )}
-
-          {onNavigate && (
-            <button
-              type="button"
-              className="btn btn-sm btn-white border shadow-sm font-weight-bold d-inline-flex align-items-center px-3"
-              style={{
-                height: '38px',
-                borderRadius: '8px',
-                borderColor: '#cbd5e1',
-                color: '#334155',
-                fontSize: '0.84rem',
-                backgroundColor: '#ffffff',
-                transition: 'all 0.15s ease-in-out',
-                whiteSpace: 'nowrap',
-              }}
-              onClick={() => onNavigate('diagnoses-setup')}
-              title="Manage clinical diagnoses library, ICD-10 codes, and bulk upload Excel/CSV"
-            >
-              <i className="fas fa-book-medical text-primary mr-2" style={{ fontSize: '0.85rem' }}></i>
-              <span>Diagnoses Directory</span>
-            </button>
-          )}
-
           {onOpenNewPatient && (
             <button
               type="button"
@@ -1166,6 +1142,36 @@ export default function AppointmentsView({
                         <td className="align-middle text-nowrap position-relative">
                           <div className="d-flex flex-column align-items-start" style={{ gap: '3px' }}>
                             {statusBadge}
+                            {appt.consultation_paid && (
+                              <span
+                                className="badge px-2 py-0.5 d-inline-flex align-items-center font-weight-bold"
+                                style={{
+                                  backgroundColor: '#ecfdf5',
+                                  color: '#059669',
+                                  border: '1px solid #a7f3d0',
+                                  fontSize: '0.72rem',
+                                  borderRadius: '4px',
+                                }}
+                                title="Consultation fee paid & receipt generated"
+                              >
+                                <i className="fas fa-receipt mr-1"></i> Consult Paid
+                              </span>
+                            )}
+                            {!appt.consultation_paid && appt.consultation_invoiced && (
+                              <span
+                                className="badge px-2 py-0.5 d-inline-flex align-items-center font-weight-bold"
+                                style={{
+                                  backgroundColor: '#fffbeb',
+                                  color: '#d97706',
+                                  border: '1px solid #fde68a',
+                                  fontSize: '0.72rem',
+                                  borderRadius: '4px',
+                                }}
+                                title="Consultation fee invoice generated, awaiting payment"
+                              >
+                                <i className="fas fa-file-invoice-dollar mr-1"></i> Consult Invoiced
+                              </span>
+                            )}
                             <VitalsBadgeWithPopover
                               vitals={appt.today_vitals}
                               onOpenVitals={() => handleOpenVitals(appt)}
@@ -1652,7 +1658,7 @@ export default function AppointmentsView({
                           </div>
                           <div>
                             <div className="font-weight-bold text-gray-900">
-                              {pat.full_name || `${pat.surname} ${pat.first_name}`}
+                              {(pat.surname ? `${pat.surname} ${pat.first_name || ''} ${pat.other_name || ''}`.trim() : null) || pat.patient_name || 'Patient'}
                             </div>
                             <div className="small text-muted">
                               <span className="badge badge-danger mr-1">MRN: {pat.hospital_number}</span>

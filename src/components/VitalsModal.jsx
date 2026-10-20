@@ -131,10 +131,9 @@ export default function VitalsModal({
     patient?.id;
 
   const patientName =
-    patient.full_name ||
+    (patient.surname ? `${patient.surname} ${patient.first_name || ''} ${patient.other_name || ''}`.trim() : null) ||
     patient.patient_name ||
     queueItem?.patient_name ||
-    `${patient.surname || ''} ${patient.first_name || ''}`.trim() ||
     'Patient';
   const hospitalNum = patient.hospital_number || queueItem?.hospital_number || 'N/A';
 
@@ -176,6 +175,8 @@ export default function VitalsModal({
       const payload = {
         patient: Number(patientId),
         queue_id: queueRowId,
+        staff_id: currentStaffUser?.id,
+        staff_username: currentStaffUser?.username,
         temperature: formData.temperature ? parseFloat(formData.temperature) : null,
         bp: bpStr,
         pulse: formData.pulse ? parseInt(formData.pulse, 10) : null,

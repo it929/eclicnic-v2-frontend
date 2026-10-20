@@ -201,11 +201,21 @@ export default function RadioLabView() {
                       <td className="font-weight-bold text-primary">
                         <i className="fas fa-microscope mr-2 text-gray-400"></i>
                         {ord.item}
+                        {(ord.comment?.includes('Pay from your purse') || ord.samples?.includes('Pay from your purse')) && (
+                          <span
+                            className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs"
+                            style={{ fontSize: '0.72rem', letterSpacing: '0.01em' }}
+                          >
+                            <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                          </span>
+                        )}
                       </td>
                       <td>{ord.patient_name || 'Patient'}</td>
                       <td className="font-weight-bold text-danger">{ord.hospital_number || '-'}</td>
                       <td className="font-weight-bold">₦{Number(ord.rate || 0).toLocaleString()}</td>
-                      <td>{ord.samples || ord.comment || 'Routine sample'}</td>
+                      <td>
+                        {ord.samples || (ord.comment?.replace(/\[Pay from your purse\]/g, '').trim()) || 'Routine sample'}
+                      </td>
                       <td>
                         {ord.completed ? (
                           <span className="badge badge-success">Result Ready</span>
@@ -269,7 +279,7 @@ export default function RadioLabView() {
                     <option value="">-- Choose Patient --</option>
                     {patientsList.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.full_name || `${p.surname} ${p.first_name}`} ({p.hospital_number || 'No Hosp#'})
+                        {(p.surname ? `${p.surname} ${p.first_name} ${p.other_name || ''}`.trim() : null) || p.patient_name || 'Patient'} ({p.hospital_number || 'No Hosp#'})
                       </option>
                     ))}
                   </select>

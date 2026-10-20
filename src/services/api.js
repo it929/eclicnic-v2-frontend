@@ -67,8 +67,17 @@ export const api = {
     return this.updateProfile(profileData);
   },
 
-  async changePassword(passwordData) {
-    const res = await client.post('/profile/change-password/', passwordData);
+  async changePassword(oldPasswordOrData, newPassword) {
+    let payload;
+    if (oldPasswordOrData && typeof oldPasswordOrData === 'object') {
+      payload = oldPasswordOrData;
+    } else {
+      payload = {
+        old_password: oldPasswordOrData,
+        new_password: newPassword,
+      };
+    }
+    const res = await client.post('/profile/change-password/', payload);
     return res.data;
   },
 
@@ -128,6 +137,11 @@ export const api = {
     return res.data;
   },
 
+  async getPatientDirectoryStats() {
+    const res = await client.get('/patients/directory-stats/');
+    return res.data;
+  },
+
   async getPatient(id) {
     const res = await client.get(`/patients/${id}/`);
     return res.data;
@@ -148,9 +162,67 @@ export const api = {
     return res.data;
   },
 
+  async togglePatientActive(id) {
+    const res = await client.post(`/patients/${id}/toggle-active/`);
+    return res.data;
+  },
+
   async getCategories() {
     const res = await client.get('/patient-categories/');
     return res.data?.results || res.data;
+  },
+
+  // ==========================================
+  // Family Folders & Family Groups
+  // ==========================================
+  async getFamilyFolders(params = {}) {
+    const res = await client.get('/family-folders/', { params });
+    return res.data;
+  },
+
+  async getFamilyFolder(id) {
+    const res = await client.get(`/family-folders/${id}/`);
+    return res.data;
+  },
+
+  async createFamilyFolder(data) {
+    const res = await client.post('/family-folders/', data);
+    return res.data;
+  },
+
+  async updateFamilyFolder(id, data) {
+    const res = await client.patch(`/family-folders/${id}/`, data);
+    return res.data;
+  },
+
+  async deleteFamilyFolder(id) {
+    const res = await client.delete(`/family-folders/${id}/`);
+    return res.data;
+  },
+
+  async addFamilyMember(folderId, memberData) {
+    const res = await client.post(`/family-folders/${folderId}/add-member/`, memberData);
+    return res.data;
+  },
+
+  async removeFamilyMember(folderId, payload) {
+    const res = await client.post(`/family-folders/${folderId}/remove-member/`, payload);
+    return res.data;
+  },
+
+  async setFamilyPrincipal(folderId, patientId) {
+    const res = await client.post(`/family-folders/${folderId}/set-principal/`, { patient_id: patientId });
+    return res.data;
+  },
+
+  async previewFamilyNumber(params = {}) {
+    const res = await client.get('/family-folders/preview-number/', { params });
+    return res.data;
+  },
+
+  async getFamilyStats() {
+    const res = await client.get('/family-folders/stats/');
+    return res.data;
   },
 
   // Sponsors & HMOs (e.g. AIICO, AVON HMO, RELIANCE, etc.)
@@ -468,6 +540,26 @@ export const api = {
     return res.data;
   },
 
+  async createConsultationBills(billingData) {
+    const res = await client.post('/invoices/create-consultation-bills/', billingData);
+    return res.data;
+  },
+
+  async saveConsultationOrders(ordersData) {
+    const res = await client.post('/invoices/save-consultation-orders/', ordersData);
+    return res.data;
+  },
+
+  async getEncounterBillingQueue(params = {}) {
+    const res = await client.get('/invoices/encounter-billing-queue/', { params });
+    return res.data?.results || res.data || [];
+  },
+
+  async generateEncounterBill(billData) {
+    const res = await client.post('/invoices/generate-encounter-bill/', billData);
+    return res.data;
+  },
+
   async getReceipts(params = {}) {
     const res = await client.get('/receipts/', { params });
     return res.data?.results || res.data;
@@ -559,6 +651,31 @@ export const api = {
 
   async updatePharmacyDrug(id, drugData) {
     const res = await client.patch(`/pharmacy/drugs/${id}/`, drugData);
+    return res.data;
+  },
+
+  async getPrescriptions(params = {}) {
+    const res = await client.get('/prescriptions/', { params });
+    return res.data?.results || res.data;
+  },
+
+  async getPrescriptionQueue() {
+    const res = await client.get('/prescriptions/queue/');
+    return res.data?.results || res.data;
+  },
+
+  async bulkSavePrescriptions(prescriptionData) {
+    const res = await client.post('/prescriptions/bulk-save/', prescriptionData);
+    return res.data;
+  },
+
+  async dispensePrescription(id) {
+    const res = await client.post(`/prescriptions/${id}/dispense/`);
+    return res.data;
+  },
+
+  async deletePrescription(id) {
+    const res = await client.delete(`/prescriptions/${id}/`);
     return res.data;
   },
 
@@ -711,6 +828,85 @@ export const api = {
   },
 
   // ==========================================
+  // RBAC: Roles, Modules, Submodules & Permissions
+  // ==========================================
+  async getRoles() {
+    const res = await client.get('/rbac/roles/');
+    return res.data;
+  },
+
+  async createRole(roleData) {
+    const res = await client.post('/rbac/roles/', roleData);
+    return res.data;
+  },
+
+  async updateRole(id, roleData) {
+    const res = await client.put(`/rbac/roles/${id}/`, roleData);
+    return res.data;
+  },
+
+  async deleteRole(id) {
+    const res = await client.delete(`/rbac/roles/${id}/`);
+    return res.data;
+  },
+
+  async getSystemModules() {
+    const res = await client.get('/rbac/modules/');
+    return res.data;
+  },
+
+  async createSystemModule(moduleData) {
+    const res = await client.post('/rbac/modules/', moduleData);
+    return res.data;
+  },
+
+  async updateSystemModule(id, moduleData) {
+    const res = await client.put(`/rbac/modules/${id}/`, moduleData);
+    return res.data;
+  },
+
+  async deleteSystemModule(id) {
+    const res = await client.delete(`/rbac/modules/${id}/`);
+    return res.data;
+  },
+
+  async createSubModule(subData) {
+    const res = await client.post('/rbac/submodules/', subData);
+    return res.data;
+  },
+
+  async updateSubModule(id, subData) {
+    const res = await client.put(`/rbac/submodules/${id}/`, subData);
+    return res.data;
+  },
+
+  async deleteSubModule(id) {
+    const res = await client.delete(`/rbac/submodules/${id}/`);
+    return res.data;
+  },
+
+  async getRolePermissions(roleId) {
+    const res = await client.get('/rbac/permissions/', { params: { role_id: roleId } });
+    return res.data;
+  },
+
+  async saveRolePermissions(roleId, assignments) {
+    const res = await client.post('/rbac/permissions/', { role_id: roleId, assignments });
+    return res.data;
+  },
+
+  async assignUserRole(userId, roleId) {
+    const res = await client.post('/rbac/assign-user-role/', { user_id: userId, role_id: roleId });
+    return res.data;
+  },
+
+  async getUserPermissions(userId = null) {
+    const params = userId ? { user_id: userId } : {};
+    const res = await client.get('/rbac/user-permissions/', { params });
+    return res.data;
+  },
+
+  // ==========================================
   // Manage Tariff Plans Module
   // ==========================================
   async getRegistrationFees() {
@@ -730,6 +926,11 @@ export const api = {
 
   async getLabCharges(params = {}) {
     const res = await client.get('/tariffs/lab-charges/', { params });
+    return res.data;
+  },
+
+  async loadGeneralLabPrices() {
+    const res = await client.post('/tariffs/lab-charges/load-general-prices/');
     return res.data;
   },
 
@@ -840,6 +1041,11 @@ export const api = {
 
   async getMedicationFees(params = {}) {
     const res = await client.get('/tariffs/medication-fees/', { params });
+    return res.data;
+  },
+
+  async loadGeneralMedicationPrices() {
+    const res = await client.post('/tariffs/medication-fees/load-general-prices/');
     return res.data;
   },
 

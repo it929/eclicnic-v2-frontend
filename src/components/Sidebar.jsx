@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../services/api';
 import {
   normalizeDepartmentKey,
@@ -6,12 +6,13 @@ import {
   formatDepartmentItem,
   AVAILABLE_MODULES,
   getDefaultModulesForDepartment,
-  isModuleAllowed,
+  getDefaultTabForDepartment,
 } from '../utils/departmentUtils';
 
 export default function Sidebar({
   activeTab,
   setActiveTab,
+  navigateToRoute = null,
   currentRole,
   setCurrentRole,
   isCollapsed,
@@ -27,27 +28,46 @@ export default function Sidebar({
   const [openSubSubmenu, setOpenSubSubmenu] = useState(null);
   const [openTariffSubSubmenu, setOpenTariffSubSubmenu] = useState(null);
 
-  // Dynamic Departments from Database
+  // Safe FontAwesome icon class helper
+  const getSafeIcon = (rawIcon) => {
+    if (!rawIcon) return 'fa-cubes';
+    const clean = String(rawIcon).trim().replace(/^fa[srbld]?\s+/, '').replace(/^fa-/, '');
+    return `fa-${clean}`;
+  };
+
+  // Dynamic Departments & Assigned Modules from Database
+  const [dbRoles, setDbRoles] = useState([]);
   const [dynamicDepartments, setDynamicDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
 
-  const fetchDbDepartments = async () => {
+  const fetchDbDepartments = useCallback(async () => {
     try {
       setLoadingDepartments(true);
-      const data = await api.getDepartments();
-      if (Array.isArray(data) && data.length > 0) {
-        setDynamicDepartments(data.map(formatDepartmentItem).filter(Boolean));
+      const rolesData = await api.getRoles();
+      if (Array.isArray(rolesData) && rolesData.length > 0) {
+        setDbRoles(rolesData);
+        setDynamicDepartments(rolesData.map(formatDepartmentItem).filter(Boolean));
+      } else {
+        const deptsData = await api.getDepartments();
+        if (Array.isArray(deptsData) && deptsData.length > 0) {
+          setDynamicDepartments(deptsData.map(formatDepartmentItem).filter(Boolean));
+        }
       }
     } catch (err) {
-      console.error('Failed to load departments from database in Sidebar:', err);
+      console.error('Failed to load roles/departments in Sidebar:', err);
     } finally {
       setLoadingDepartments(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchDbDepartments();
-  }, []);
+    const handleRbacUpdate = () => {
+      fetchDbDepartments();
+    };
+    window.addEventListener('clinic365_rbac_updated', handleRbacUpdate);
+    return () => window.removeEventListener('clinic365_rbac_updated', handleRbacUpdate);
+  }, [fetchDbDepartments]);
 
   // Update when prop changes from parent
   useEffect(() => {
@@ -59,12 +79,33 @@ export default function Sidebar({
   // Combined department list (DB takes priority, fallback to built-in list)
   const departmentList = dynamicDepartments.length > 0 ? dynamicDepartments : DEPARTMENT_LIST;
 
-  const isAdmin = currentRole === 'Admin' || currentRole === 'CMD';
+  const userRole = String(
+    user?.role_name ||
+    (typeof user?.role === 'object' ? user?.role?.name : user?.role) ||
+    localStorage.getItem('clinic365_user_role') ||
+    ''
+  ).toLowerCase();
+
+  const isUserAdmin = Boolean(
+    user?.is_superuser ||
+    user?.is_staff ||
+    userRole === 'admin' ||
+    userRole === 'cmd' ||
+    localStorage.getItem('clinic365_is_admin') === 'true' ||
+    currentRole === 'Admin' ||
+    currentRole === 'CMD'
+  );
+
+  const isAdmin = isUserAdmin;
 
   // Determine permitted modules for this user based on their department
-  const staffModules = (() => {
+  const staffModules = useMemo(() => {
     if (isAdmin) return AVAILABLE_MODULES.map((m) => m.id);
 
+    // Primary: Role-Based Access Control Modules from Database
+    if (user?.role_modules && Array.isArray(user.role_modules) && user.role_modules.length > 0) {
+      return user.role_modules;
+    }
     if (user?.department_modules && Array.isArray(user.department_modules) && user.department_modules.length > 0) {
       return user.department_modules;
     }
@@ -89,36 +130,72 @@ export default function Sidebar({
     }
 
     return getDefaultModulesForDepartment(normalizeDepartmentKey(userDeptName));
-  })();
+  }, [isAdmin, user, currentRole, dynamicDepartments]);
 
-  const isDeptKeyAllowed = (deptKey) => {
-    if (isAdmin) return true;
-    if (!Array.isArray(staffModules) || staffModules.length === 0) return false;
+  const isDeptKeyAllowed = useCallback(
+    (deptKey) => {
+      if (isAdmin) return true;
+      if (!Array.isArray(staffModules) || staffModules.length === 0) return false;
 
-    const mapping = {
-      frontdesk: ['frontdesk'],
-      nursing: ['nursing'],
-      clinical: ['clinical'],
-      inventory: ['inventory'],
-      ipd1: ['ipd_pharmacy'],
-      ipd2: ['ipd_pharmacy'],
-      ipd3: ['ipd_pharmacy'],
-      opd1: ['opd_pharmacy'],
-      opd2: ['opd_pharmacy'],
-      laboratory: ['laboratory'],
-      radiology: ['radiology'],
-      billings: ['billings'],
-      reporting: ['reporting'],
-    };
+      const mapping = {
+        frontdesk: [
+          'frontdesk',
+          'fd_registration',
+          'fd_records',
+          'fd_appointments',
+          'fd_attendance',
+          'fd_uploads',
+          'fd_billing',
+        ],
+        nursing: ['nursing'],
+        clinical: ['clinical'],
+        inventory: ['inventory'],
+        ipd1: ['ipd_pharmacy'],
+        ipd2: ['ipd_pharmacy'],
+        ipd3: ['ipd_pharmacy'],
+        opd1: ['opd_pharmacy'],
+        opd2: ['opd_pharmacy'],
+        laboratory: ['laboratory'],
+        radiology: ['radiology'],
+        billings: ['billings', 'fd_billing'],
+        reporting: ['reporting'],
+      };
 
-    const required = mapping[deptKey] || [deptKey];
-    return required.some((m) => staffModules.includes(m));
-  };
+      const required = mapping[deptKey] || [deptKey];
+      return required.some((m) => staffModules.includes(m));
+    },
+    [isAdmin, staffModules]
+  );
 
-  // Filter department list to allowed ones
-  const allowedDepartmentList = isAdmin
-    ? departmentList
-    : departmentList.filter((d) => isDeptKeyAllowed(d.key));
+  const isSubmoduleAllowed = useCallback(
+    (codeOrCodes, moduleKey) => {
+      if (isAdmin) return true;
+      if (moduleKey && !isDeptKeyAllowed(moduleKey)) return false;
+      const roleSubs = user?.role_submodules;
+      if (!Array.isArray(roleSubs) || roleSubs.length === 0) {
+        return true; // No granular submodule restrictions applied
+      }
+      const codes = Array.isArray(codeOrCodes) ? codeOrCodes : [codeOrCodes];
+      const lowerRoleSubs = roleSubs.map((s) => String(s).toLowerCase());
+      return codes.some((c) => lowerRoleSubs.includes(String(c).toLowerCase()));
+    },
+    [isAdmin, isDeptKeyAllowed, user]
+  );
+
+  // Filter department list to allowed ones and deduplicate by key
+  const allowedDepartmentList = useMemo(() => {
+    const list = isAdmin
+      ? departmentList
+      : departmentList.filter((d) => isDeptKeyAllowed(d.key));
+
+    const seen = new Set();
+    return list.filter((dept) => {
+      if (!dept || !dept.key) return false;
+      if (seen.has(dept.key)) return false;
+      seen.add(dept.key);
+      return true;
+    });
+  }, [isAdmin, departmentList, isDeptKeyAllowed]);
 
   // Switch Department state
   const [isDepartmentDropdownOpen, setIsDepartmentDropdownOpen] = useState(false);
@@ -142,28 +219,111 @@ export default function Sidebar({
         localStorage.setItem('selectedDepartment', normalized);
       }
     }
-  }, [selectedDepartment, currentRole]);
+  }, [selectedDepartment, currentRole, activeDept]);
+
+  // Resolve active department object and its assigned modules from database
+  const activeDepartmentRole = useMemo(() => {
+    if (!Array.isArray(dbRoles) || dbRoles.length === 0) return null;
+    return (
+      dbRoles.find((r) => normalizeDepartmentKey(r.name) === activeDept) ||
+      dbRoles.find((r) => currentRole && r.name && r.name.toLowerCase() === currentRole.toLowerCase()) ||
+      dbRoles.find((r) => r.name && r.name.toLowerCase().includes(activeDept)) ||
+      null
+    );
+  }, [dbRoles, activeDept, currentRole]);
+
+  const activeDepartmentModules = useMemo(() => {
+    if (!activeDepartmentRole || !Array.isArray(activeDepartmentRole.modules)) {
+      return [];
+    }
+    return activeDepartmentRole.modules;
+  }, [activeDepartmentRole]);
 
   // Load department handler (matching HTML loadDepartment function)
-  const loadDepartment = (deptKey) => {
-    const normalized = normalizeDepartmentKey(deptKey);
-    setActiveDept(normalized);
-    localStorage.setItem('selectedDepartment', normalized);
-    if (setSelectedDepartment) {
-      setSelectedDepartment(normalized);
+  const loadDepartment = useCallback(
+    (deptKey, rawDeptName = null) => {
+      if (!isAdmin) {
+        setIsDepartmentDropdownOpen(false);
+        return;
+      }
+      const normalized = normalizeDepartmentKey(deptKey);
+      setActiveDept(normalized);
+      localStorage.setItem('selectedDepartment', normalized);
+      if (setSelectedDepartment) {
+        setSelectedDepartment(normalized);
+      }
+      if (setCurrentRole && rawDeptName) {
+        // Strip leading emoji/symbols to keep role name clean
+        const cleanRole = String(rawDeptName).replace(/^[\S]+\s*/, '').trim() || rawDeptName;
+        setCurrentRole(cleanRole);
+        localStorage.setItem('clinic365_dept', cleanRole);
+      }
+      if (setActiveTab) {
+        // Find matching role in DB to see its primary tab
+        const matched = dbRoles.find(
+          (r) =>
+            normalizeDepartmentKey(r.name) === normalized ||
+            (rawDeptName && r.name.toLowerCase() === String(rawDeptName).toLowerCase())
+        );
+        const firstMod = matched?.modules?.[0];
+        const targetTab =
+          firstMod?.primary_tab ||
+          (normalized === 'frontdesk' ? 'patients' : getDefaultTabForDepartment(normalized, rawDeptName));
+        setActiveTab(targetTab);
+      }
+      setIsDepartmentDropdownOpen(false);
+    },
+    [isAdmin, setSelectedDepartment, setCurrentRole, setActiveTab, dbRoles]
+  );
+
+  // Automatically expand the first module with submodules when switching department
+  useEffect(() => {
+    if (activeDepartmentModules.length > 0) {
+      const firstWithSubs = activeDepartmentModules.find(
+        (m) => Array.isArray(m.submodules) && m.submodules.length > 0
+      );
+      if (firstWithSubs) {
+        setOpenSubmenu(firstWithSubs.code || firstWithSubs.id);
+      } else {
+        setOpenSubmenu(null);
+      }
     }
-    setIsDepartmentDropdownOpen(false);
+  }, [activeDept, activeDepartmentModules]);
+
+  // Submodule navigation handler
+  const handleSubmoduleClick = (sub, mod) => {
+    if (sub.route && navigateToRoute) {
+      navigateToRoute(sub.route);
+    } else if (setActiveTab && sub.tab_key) {
+      setActiveTab(sub.tab_key, sub.sub_tab, sub.sub_sub_tab);
+    } else if (setActiveTab && mod.primary_tab) {
+      setActiveTab(mod.primary_tab);
+    }
   };
 
-  // Ensure staff members are on an allowed department module
+  // Module navigation handler
+  const handleModuleClick = (mod) => {
+    if (mod.submodules && mod.submodules.length > 0) {
+      toggleSubmenu(mod.code || mod.id);
+    } else if (setActiveTab && mod.primary_tab) {
+      setActiveTab(mod.primary_tab);
+    }
+  };
+
+  // Ensure staff members stay on an allowed department module without cascading renders
   useEffect(() => {
     if (!isAdmin && allowedDepartmentList.length > 0) {
       const isAllowed = allowedDepartmentList.some((d) => d.key === activeDept);
       if (!isAllowed) {
-        loadDepartment(allowedDepartmentList[0].key);
+        const fallback = allowedDepartmentList[0];
+        setActiveDept(fallback.key);
+        localStorage.setItem('selectedDepartment', fallback.key);
+        if (setSelectedDepartment) {
+          setSelectedDepartment(fallback.key);
+        }
       }
     }
-  }, [isAdmin, allowedDepartmentList, activeDept]);
+  }, [isAdmin, allowedDepartmentList, activeDept, setSelectedDepartment]);
 
   const toggleSubmenu = (menu) => {
     setOpenSubmenu(openSubmenu === menu ? null : menu);
@@ -178,7 +338,7 @@ export default function Sidebar({
   };
 
   const currentDeptObj =
-    departmentList.find((d) => d.key === activeDept) || {
+    departmentList.find((d) => d && d.key === activeDept) || {
       key: activeDept,
       label: `🏢 ${currentRole || activeDept}`,
       icon: 'fa-building',
@@ -229,36 +389,37 @@ export default function Sidebar({
         </div>
       </a>
 
-      {/* Role Switcher Pill */}
+      {/* Role Pill - Read-only for staff, view selector for admin */}
       <div className="px-3 py-2 text-center">
         <span className="badge badge-light px-2 py-1 text-primary font-weight-bold" style={{ fontSize: '0.75rem' }}>
-          Role: {currentRole}
+          {isAdmin ? `Department: ${currentRole}` : `Role: ${currentRole}`}
         </span>
-        <div className="mt-1">
-          <select
-            className="custom-select custom-select-sm bg-light text-dark font-weight-bold border-0"
-            style={{ fontSize: '0.75rem', height: '28px' }}
-            value={currentRole}
-            onChange={(e) => {
-              const newRole = e.target.value;
-              setCurrentRole(newRole);
-              const deptKey = normalizeDepartmentKey(newRole);
-              loadDepartment(deptKey);
-            }}
-          >
-            <option value="Admin">Admin View</option>
-            <option value="CMD">CMD View</option>
-            {departmentList.map((dept) => {
-              const optVal = dept.name || dept.label.replace(/^[\S]+\s*/, '');
-              if (optVal.toLowerCase() === 'admin' || optVal.toLowerCase() === 'cmd') return null;
-              return (
-                <option key={dept.id || dept.key} value={optVal}>
-                  {optVal} View
-                </option>
-              );
-            })}
-          </select>
-        </div>
+        {isAdmin && (
+          <div className="mt-1">
+            <select
+              className="custom-select custom-select-sm bg-light text-dark font-weight-bold border-0"
+              style={{ fontSize: '0.75rem', height: '28px' }}
+              value={currentRole}
+              onChange={(e) => {
+                const newRole = e.target.value;
+                const deptKey = normalizeDepartmentKey(newRole);
+                loadDepartment(deptKey, newRole);
+              }}
+            >
+              <option value="Admin">Admin View</option>
+              <option value="CMD">CMD View</option>
+              {departmentList.map((dept) => {
+                const optVal = dept.name || dept.label.replace(/^[\S]+\s*/, '');
+                if (optVal.toLowerCase() === 'admin' || optVal.toLowerCase() === 'cmd') return null;
+                return (
+                  <option key={dept.id || dept.key} value={optVal}>
+                    {optVal} View
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        )}
       </div>
 
       <hr className="sidebar-divider my-2" />
@@ -271,6 +432,17 @@ export default function Sidebar({
         >
           <i className="fas fa-fw fa-tachometer-alt"></i>
           <span>Dashboard</span>
+        </a>
+      </li>
+
+      {/* Nav Item - Registered Patients */}
+      <li className={`nav-item ${activeTab === 'patients' ? 'active' : ''}`}>
+        <a
+          className="nav-link cursor-pointer"
+          onClick={() => setActiveTab('patients')}
+        >
+          <i className="fas fa-fw fa-hospital-user"></i>
+          <span>Registered Patients</span>
         </a>
       </li>
 
@@ -333,117 +505,173 @@ export default function Sidebar({
               <i className={`fas fa-chevron-${openSubmenu === 'taskManager' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
             </a>
             {openSubmenu === 'taskManager' && (
-              <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
+              <div className="bg-white py-2 collapse-inner rounded shadow-sm">
                 {/* Staff Management */}
-                <a
-                  className="collapse-item cursor-pointer d-flex justify-content-between align-items-center text-info font-weight-bold"
+                <div
+                  className={`sidebar-submenu-toggle cursor-pointer ${
+                    openSubSubmenu === 'staff' ? 'is-open' : ''
+                  }`}
                   onClick={() => toggleSubSubmenu('staff')}
                 >
-                  <span><i className="fas fa-users-cog mr-1"></i> Staff Management</span>
-                  <i className={`fas fa-chevron-${openSubSubmenu === 'staff' ? 'down' : 'right'} text-xs`}></i>
-                </a>
+                  <span className="d-flex align-items-center text-truncate mr-1">
+                    <span className="icon-badge">
+                      <i className="fas fa-users-cog"></i>
+                    </span>
+                    <span>Staff Management</span>
+                  </span>
+                  <i className={`fas fa-chevron-${openSubSubmenu === 'staff' ? 'down' : 'right'} text-xs text-muted flex-shrink-0`}></i>
+                </div>
                 {openSubSubmenu === 'staff' && (
-                  <div className="pl-3 py-1 bg-light rounded mx-2 mb-1">
+                  <div className="sidebar-sub-tree">
                     <a
-                      className="collapse-item cursor-pointer text-primary d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'staff', 'manage_users')}
+                      title="Manage Users"
                     >
-                      <i className="fas fa-user-friends mr-1"></i> Manage Users
+                      <span className="sub-item-text"><i className="fas fa-user-friends sub-item-icon"></i> Manage Users</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-primary d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'staff', 'online_users')}
+                      title="View Online Users"
                     >
-                      <i className="fas fa-globe mr-1"></i> View Online Users
+                      <span className="sub-item-text"><i className="fas fa-globe sub-item-icon"></i> Online Users</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-primary d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'staff', 'activity_logs')}
+                      title="User Activity Logs"
                     >
-                      <i className="fas fa-history mr-1"></i> User Activity logs
+                      <span className="sub-item-text"><i className="fas fa-history sub-item-icon"></i> Activity Logs</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-primary d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'staff', 'activity_dashboard')}
+                      title="Activities Dashboard"
                     >
-                      <i className="fas fa-tachometer-alt mr-1"></i> Activities Dashboard
+                      <span className="sub-item-text"><i className="fas fa-tachometer-alt sub-item-icon"></i> Activity Dashboard</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-primary d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'staff', 'verify_staff')}
+                      title="Authenticate Staff ID"
                     >
-                      <i className="fas fa-id-card mr-1"></i> Authenticate Users ID
+                      <span className="sub-item-text"><i className="fas fa-id-card sub-item-icon"></i> Verify Staff ID</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-primary d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'staff', 'create_staff')}
+                      title="Create Staff Account"
                     >
-                      <i className="fas fa-user-plus mr-1"></i> Create Staff
+                      <span className="sub-item-text"><i className="fas fa-user-plus sub-item-icon"></i> Create Staff</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-primary d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'staff', 'departments')}
+                      title="User Departments & Categories"
                     >
-                      <i className="fas fa-sitemap mr-1"></i> User Categories (Departments)
+                      <span className="sub-item-text"><i className="fas fa-sitemap sub-item-icon"></i> User Departments</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-primary d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'staff', 'assign_modules')}
+                      title="Assign Department Modules"
                     >
-                      <i className="fas fa-cubes mr-1"></i> Assign Department Modules
+                      <span className="sub-item-text"><i className="fas fa-cubes sub-item-icon"></i> Department Modules</span>
+                    </a>
+                    <a
+                      className="sidebar-sub-item sidebar-sub-item-danger font-weight-bold"
+                      onClick={() => setActiveTab('taskmanager', 'staff', 'rbac')}
+                      title="Department & Module Access Control"
+                    >
+                      <span className="sub-item-text"><i className="fas fa-sitemap sub-item-icon"></i> Department Access</span>
+                      <span className="sidebar-micro-badge badge-danger">RBAC</span>
                     </a>
                   </div>
                 )}
 
                 {/* Queue Monitor */}
-                <a
-                  className="collapse-item cursor-pointer d-flex justify-content-between align-items-center text-primary font-weight-bold"
+                <div
+                  className={`sidebar-submenu-toggle cursor-pointer mt-1 ${
+                    openSubSubmenu === 'queue' ? 'is-open' : ''
+                  }`}
                   onClick={() => toggleSubSubmenu('queue')}
                 >
-                  <span><i className="fas fa-user-clock mr-1"></i> Queue Monitor</span>
-                  <i className={`fas fa-chevron-${openSubSubmenu === 'queue' ? 'down' : 'right'} text-xs`}></i>
-                </a>
+                  <span className="d-flex align-items-center text-truncate mr-1">
+                    <span className="icon-badge">
+                      <i className="fas fa-user-clock"></i>
+                    </span>
+                    <span>Queue Monitor</span>
+                  </span>
+                  <i className={`fas fa-chevron-${openSubSubmenu === 'queue' ? 'down' : 'right'} text-xs text-muted flex-shrink-0`}></i>
+                </div>
                 {openSubSubmenu === 'queue' && (
-                  <div className="pl-3 py-1 bg-light rounded mx-2 mb-1">
+                  <div className="sidebar-sub-tree">
                     <a
-                      className="collapse-item cursor-pointer text-info d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'queue', 'waiting_list')}
+                      title="Waiting Patients Queue"
                     >
-                      <i className="fas fa-hourglass-half mr-1"></i> Waiting List
+                      <span className="sub-item-text"><i className="fas fa-hourglass-half sub-item-icon text-warning"></i> Waiting List</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-info d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'queue', 'completed_list')}
+                      title="Completed Consultations"
                     >
-                      <i className="fas fa-check-double mr-1"></i> Completed List
+                      <span className="sub-item-text"><i className="fas fa-check-double sub-item-icon text-success"></i> Completed List</span>
                     </a>
                   </div>
                 )}
 
                 {/* Statistical Insights */}
-                <a
-                  className="collapse-item cursor-pointer d-flex justify-content-between align-items-center text-success font-weight-bold"
+                <div
+                  className={`sidebar-submenu-toggle cursor-pointer mt-1 ${
+                    openSubSubmenu === 'stats' ? 'is-open' : ''
+                  }`}
                   onClick={() => toggleSubSubmenu('stats')}
                 >
-                  <span><i className="fas fa-chart-line mr-1"></i> Statistical Insights</span>
-                  <i className={`fas fa-chevron-${openSubSubmenu === 'stats' ? 'down' : 'right'} text-xs`}></i>
-                </a>
+                  <span className="d-flex align-items-center text-truncate mr-1">
+                    <span className="icon-badge">
+                      <i className="fas fa-chart-line"></i>
+                    </span>
+                    <span>Statistical Insights</span>
+                  </span>
+                  <i className={`fas fa-chevron-${openSubSubmenu === 'stats' ? 'down' : 'right'} text-xs text-muted flex-shrink-0`}></i>
+                </div>
                 {openSubSubmenu === 'stats' && (
-                  <div className="pl-3 py-1 bg-light rounded mx-2 mb-1">
+                  <div className="sidebar-sub-tree">
                     <a
-                      className="collapse-item cursor-pointer text-info d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'stats', 'diagnosis')}
+                      title="Medical Diagnosis Analytics"
                     >
-                      <i className="fas fa-stethoscope mr-1"></i> Medical Diagnosis
+                      <span className="sub-item-text"><i className="fas fa-stethoscope sub-item-icon text-info"></i> Medical Diagnosis</span>
                     </a>
                     <a
-                      className="collapse-item cursor-pointer text-info d-block py-1 small"
+                      className="sidebar-sub-item"
                       onClick={() => setActiveTab('taskmanager', 'stats', 'financial')}
+                      title="Hospital Financial Analytics"
                     >
-                      <i className="fas fa-file-invoice-dollar mr-1"></i> Financial Data
+                      <span className="sub-item-text"><i className="fas fa-file-invoice-dollar sub-item-icon text-success"></i> Financial Data</span>
                     </a>
                   </div>
                 )}
+
+                {/* Dedicated RBAC Access Action Banner */}
+                <div className="pt-2 mt-2 border-top px-1">
+                  <a
+                    className="sidebar-rbac-banner"
+                    onClick={() => setActiveTab('taskmanager', 'staff', 'rbac')}
+                    title="Department & Module Access Control"
+                  >
+                    <span className="d-flex align-items-center text-truncate mr-2">
+                      <i className="fas fa-sitemap mr-2 text-danger"></i>
+                      <span className="font-weight-bold text-truncate" style={{ fontSize: '0.82rem' }}>Department Access</span>
+                    </span>
+                    <span className="sidebar-rbac-pill">DEPT</span>
+                  </a>
+                </div>
               </div>
             )}
             </li>
@@ -451,7 +679,7 @@ export default function Sidebar({
 
           {/* Manage Tariff Plans Module */}
           {(isAdmin || staffModules.includes('tariffs')) && (
-            <li className={`nav-item ${activeTab === 'tariffs' ? 'active' : ''}`} style={{ marginTop: '-10px' }}>
+            <li className={`nav-item ${activeTab === 'tariffs' || activeTab === 'visit-purposes' || activeTab === 'diagnoses-setup' ? 'active' : ''}`} style={{ marginTop: '-10px' }}>
             <a
               className="nav-link cursor-pointer collapsed"
               onClick={() => toggleSubmenu('manageTariffs')}
@@ -522,7 +750,7 @@ export default function Sidebar({
                       className="collapse-item cursor-pointer text-info font-weight-bold d-block py-1 small"
                       onClick={() => setActiveTab('visit-purposes')}
                     >
-                      <i className="fas fa-stethoscope mr-1"></i> Consultation &amp; Visit Purposes
+                      <i className="fas fa-stethoscope mr-1"></i> Appointment &amp; Visit Purposes Setup
                     </a>
                   </div>
                 )}
@@ -576,16 +804,40 @@ export default function Sidebar({
                     </a>
                   </div>
                 )}
+
+                {/* Appointment & Visit Purposes Setup */}
+                <a
+                  className={`collapse-item cursor-pointer text-primary font-weight-bold mb-1 d-flex align-items-center ${
+                    activeTab === 'visit-purposes' ? 'active font-weight-bolder text-info' : ''
+                  }`}
+                  onClick={() => setActiveTab('visit-purposes')}
+                  title="Configure clinical consultation fees, triage purposes and tariffs"
+                >
+                  <i className="fas fa-stethoscope mr-1 text-info"></i>
+                  <span>Appointment &amp; Visit Purposes Setup</span>
+                </a>
+
+                {/* Medical Diagnoses Directory & Bulk Setup */}
+                <a
+                  className={`collapse-item cursor-pointer text-primary font-weight-bold mb-1 d-flex align-items-center ${
+                    activeTab === 'diagnoses-setup' ? 'active font-weight-bolder text-info' : ''
+                  }`}
+                  onClick={() => setActiveTab('diagnoses-setup')}
+                  title="Medical Diagnoses Directory & Bulk Setup"
+                >
+                  <i className="fas fa-book-medical mr-1 text-danger"></i>
+                  <span>Medical Diagnoses Directory &amp; Bulk Setup</span>
+                </a>
               </div>
             )}
             </li>
           )}
 
       {/* ============================================================== */}
-      {/* SWITCH DEPARTMENT / MODULE DROPDOWN */}
-      {/* Admin can switch across all departments; Staff can switch across assigned modules */}
+      {/* SWITCH DEPARTMENT DROPDOWN */}
+      {/* Admin users only: only admin can switch department */}
       {/* ============================================================== */}
-      {(isAdmin || allowedDepartmentList.length > 1) && (
+      {isAdmin && (
         <>
           <hr className="sidebar-divider my-2" />
 
@@ -602,11 +854,11 @@ export default function Sidebar({
               <div>
                 <i className="fas fa-fw fa-building text-warning mr-1"></i>
                 <span style={{ fontWeight: 'bold' }} className="text-warning">
-                  {isAdmin ? 'Switch Department ▼' : 'Switch Module ▼'}
+                  Switch Department ▼
                 </span>
               </div>
               <span className="badge badge-warning text-dark font-weight-bold" style={{ fontSize: '0.65rem' }}>
-                {currentDeptObj.label.split(' ')[1] || 'Front'}
+                {currentDeptObj?.label ? currentDeptObj.label.replace(/^[\S]+\s*/, '') : 'Dept'}
               </span>
             </a>
 
@@ -628,9 +880,7 @@ export default function Sidebar({
               >
                 <div className="dropdown-header text-muted text-uppercase px-3 py-1 font-weight-bold small d-flex justify-content-between align-items-center">
                   <span>
-                    {isAdmin
-                      ? `Hospital Departments (${allowedDepartmentList.length})`
-                      : `Assigned Modules (${allowedDepartmentList.length})`}
+                    Hospital Departments ({allowedDepartmentList.length})
                   </span>
                   {loadingDepartments && <i className="fas fa-spinner fa-spin text-primary ml-1"></i>}
                 </div>
@@ -641,7 +891,9 @@ export default function Sidebar({
                       activeDept === dept.key ? 'bg-light font-weight-bold text-primary' : 'text-dark'
                     }`}
                     style={{ fontSize: '0.85rem' }}
-                    onClick={() => loadDepartment(dept.key)}
+                    onClick={() => {
+                      loadDepartment(dept.key, dept.name || dept.label);
+                    }}
                   >
                     <span>{dept.label}</span>
                     <div className="d-flex align-items-center">
@@ -666,1302 +918,117 @@ export default function Sidebar({
       {/* DEPARTMENT NAVIGATION CONTAINER (#departmentNavContainer) */}
       {/* Displays the navigation of the selected department dynamically */}
       {/* ============================================================== */}
+      {/* ============================================================== */}
+      {/* DEPARTMENT NAVIGATION CONTAINER (#departmentNavContainer) */}
+      {/* Displays the modules & submodules assigned to the selected department */}
+      {/* ============================================================== */}
       <div id="departmentNavContainer" className="w-100">
-        {/* ----------------- 1. FRONT DESK ----------------- */}
-        {activeDept === 'frontdesk' && (
-          <div id="nav-frontdesk" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">🏥 Front Desk</span>
-            </div>
-
-            {/* Patients Registration */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('fdRegistration')}
-              >
-                <i className="fas fa-fw fa-user-plus"></i>
-                <span>Patients Registration</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'fdRegistration' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'fdRegistration' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={onOpenNewPatient}
-                  >
-                    <i className="fas fa-plus-circle mr-1"></i> Register new Patient
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-file-excel mr-1"></i> Import Patient from Excel
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-calendar-day mr-1"></i> Registered Today
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('tariffs', 'sponsors', 'manage_sponsors')}
-                  >
-                    <i className="fas fa-building mr-1"></i> Sponsors
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('tariffs', 'plans', 'manage_plans')}
-                  >
-                    <i className="fas fa-layer-group mr-1"></i> Plans
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Patients Records */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('fdPatientRecords')}
-              >
-                <i className="fas fa-fw fa-users"></i>
-                <span>Patients Records</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'fdPatientRecords' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'fdPatientRecords' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-search mr-1"></i> Search for Patients
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
-                  >
-                    <i className="fas fa-clock mr-1"></i> Waiting List (Doctors)
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-birthday-cake mr-1"></i> Today's Birthday List
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-user-friends mr-1"></i> Family Patients
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('anc')}
-                  >
-                    <i className="fas fa-female mr-1"></i> ANC Patients
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-id-card mr-1"></i> HMO Patients
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-shield-alt mr-1"></i> NHIS Patients
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-briefcase mr-1"></i> Retainership Patients
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Appointments */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('fdAppointments')}
-              >
-                <i className="fas fa-fw fa-bell"></i>
-                <span>Appointments</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'fdAppointments' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'fdAppointments' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('appointments', 'today')}
-                  >
-                    <i className="fas fa-calendar-check mr-1"></i> Today's Appointments
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('appointments', 'upcoming')}
-                  >
-                    <i className="fas fa-calendar-alt mr-1"></i> Upcoming Appointments
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('appointments', 'cancelled')}
-                  >
-                    <i className="fas fa-calendar-times mr-1"></i> Cancelled Appointments
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('appointments', 'all')}
-                  >
-                    <i className="fas fa-notes-medical mr-1"></i> Appointments Reviews
-                  </a>
-                  <div className="dropdown-divider my-1"></div>
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('visit-purposes')}
-                  >
-                    <i className="fas fa-stethoscope mr-1"></i> Visit Purposes Setup
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('diagnoses-setup')}
-                  >
-                    <i className="fas fa-book-medical mr-1"></i> Medical Diagnoses Directory
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-success font-weight-bold"
-                    onClick={() => setActiveTab('complaints-setup')}
-                  >
-                    <i className="fas fa-clipboard-list mr-1"></i> Presenting Complaints Directory
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Attendance Sheet */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('fdAttendance')}
-              >
-                <i className="fas fa-fw fa-clipboard-list"></i>
-                <span>Attendance Sheet</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'fdAttendance' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'fdAttendance' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
-                  >
-                    <i className="fas fa-clipboard-check mr-1"></i> All-time Attendance
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* File Uploads */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('fdUploads')}
-              >
-                <i className="fas fa-fw fa-upload"></i>
-                <span>File Uploads</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'fdUploads' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'fdUploads' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('tariffs', 'packages')}
-                  >
-                    <i className="fas fa-file-upload mr-1"></i> Upload patients Type
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('patients')}
-                  >
-                    <i className="fas fa-users-cog mr-1"></i> Upload patients Records
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('tariffs', 'service')}
-                  >
-                    <i className="fas fa-list-alt mr-1"></i> Upload Service List
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Deactivated Patients */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('patients')}
-              >
-                <i className="fas fa-user-times mr-1"></i>
-                <span>Deactivated Patients</span>
-              </a>
-            </li>
+        {loadingDepartments && activeDepartmentModules.length === 0 ? (
+          <div className="text-center py-4 text-white-50 small">
+            <i className="fas fa-spinner fa-spin mr-1"></i> Loading modules...
           </div>
-        )}
-
-        {/* ----------------- 2. NURSING ----------------- */}
-        {activeDept === 'nursing' && (
-          <div id="nav-nursing" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">💉 Nursing Interface</span>
-            </div>
-
-            {/* Patients Queue */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('nurseQueue')}
-              >
-                <i className="fas fa-fw fa-users"></i>
-                <span>Patients Queue</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'nurseQueue' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'nurseQueue' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
-                  >
-                    <i className="fas fa-user-clock mr-1"></i> Patients Waiting List
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
-                  >
-                    <i className="fas fa-check-circle mr-1"></i> Today's Completed List
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
-                  >
-                    <i className="fas fa-stethoscope mr-1"></i> Waiting List (Doctors)
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
-                  >
-                    <i className="fas fa-hospital mr-1"></i> Hospital Waiting List (All)
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Today's Appointments List */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('appointments', 'today')}
-              >
-                <i className="fas fa-clipboard-list"></i>
-                <span>Today's Appointments List</span>
-              </a>
-            </li>
-
-            {/* Wards Management */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('nurseWards')}
-              >
-                <i className="fas fa-fw fa-bed"></i>
-                <span>Wards Management</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'nurseWards' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'nurseWards' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('ipd')}
-                  >
-                    <i className="fas fa-procedures mr-1"></i> Create & Manage Bed
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('ipd')}
-                  >
-                    <i className="fas fa-table mr-1"></i> Admissions Table
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* In Patient: Admission */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('nurseAdmit')}
-              >
-                <i className="fas fa-procedures"></i>
-                <span className="text-warning font-weight-bold">In Patient: Admission</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'nurseAdmit' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'nurseAdmit' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('ipd')}
-                  >
-                    <i className="fas fa-file-medical-alt mr-1"></i> Admission Notes
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('ipd')}
-                  >
-                    <i className="fas fa-pills mr-1"></i> Drugs Chart
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Search for Patients */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('patients')}
-              >
-                <i className="fas fa-search"></i>
-                <span>Search for Patients</span>
-              </a>
-            </li>
-          </div>
-        )}
-
-        {/* ----------------- 3. CLINICAL ----------------- */}
-        {activeDept === 'clinical' && (
-          <div id="nav-clinical" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">👨‍⚕️ Clinical Interface</span>
-            </div>
-
-            {/* Patients Queue */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('clinicalQueue')}
-              >
-                <i className="fas fa-fw fa-users"></i>
-                <span>Patients Queue</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'clinicalQueue' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'clinicalQueue' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
-                  >
-                    <i className="fas fa-clock mr-1"></i> Patients Waiting List
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('radiolab')}
-                  >
-                    <i className="fas fa-vial mr-1"></i> Lab Results Queues
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('radiolab')}
-                  >
-                    <i className="fas fa-x-ray mr-1"></i> Scan Results Queues
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('queues')}
-                  >
-                    <i className="fas fa-check-double mr-1"></i> Today's Completed List
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Appointments List */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('clinicalAppts')}
-              >
-                <i className="fas fa-fw fa-bell"></i>
-                <span>Appointments List</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'clinicalAppts' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'clinicalAppts' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('appointments', 'today')}
-                  >
-                    <i className="fas fa-calendar-day mr-1"></i> Today's Appointments
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('appointments', 'upcoming')}
-                  >
-                    <i className="fas fa-calendar-alt mr-1"></i> Upcoming Appointments
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('appointments', 'all')}
-                  >
-                    <i className="fas fa-history mr-1"></i> All-time Appointments
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Admissions Table */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('ipd')}
-              >
-                <i className="fas fa-fw fa-clipboard-list"></i>
-                <span>Admissions Table</span>
-              </a>
-            </li>
-
-            {/* Medical Diagnosis */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('taskmanager', 'stats', 'diagnosis')}
-              >
-                <i className="fas fa-fw fa-chart-pie"></i>
-                <span>Medical Diagnosis</span>
-              </a>
-            </li>
-
-            {/* Search for Patients */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('patients')}
-              >
-                <i className="fas fa-search"></i>
-                <span>Search for Patients</span>
-              </a>
-            </li>
-          </div>
-        )}
-
-        {/* ----------------- 4. INVENTORY ----------------- */}
-        {activeDept === 'inventory' && (
-          <div id="nav-inventory" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">📦 Inventory</span>
-            </div>
-
-            {/* Inventory Settings */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('invSettings')}
-              >
-                <i className="fas fa-fw fa-cog"></i>
-                <span>Inventory Settings</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'invSettings' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'invSettings' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'view')}
-                  >
-                    <i className="fas fa-boxes mr-1"></i> View Inventory
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('inventory', 'upload')}
-                  >
-                    <i className="fas fa-upload mr-1"></i> Upload Products
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('inventory', 'imports')}
-                  >
-                    <i className="fas fa-file-import mr-1"></i> Manage all Imports
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('inventory', 'imports_history')}
-                  >
-                    <i className="fas fa-history mr-1"></i> Importations History
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('inventory', 'vendors')}
-                  >
-                    <i className="fas fa-building mr-1"></i> Manage Vendors
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('inventory', 'scan')}
-                  >
-                    <i className="fas fa-barcode mr-1"></i> Scan Products
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Transfer Products */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('invTransfer')}
-              >
-                <i className="fas fa-arrow-up"></i>
-                <span>Transfer Products</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'invTransfer' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'invTransfer' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'transfers')}
-                  >
-                    <i className="fas fa-share mr-1"></i> To IPD Pharmacy (1, 2, 3)
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'transfers')}
-                  >
-                    <i className="fas fa-share mr-1"></i> To OPD Pharmacy (1, 2)
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Manage Transfers */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('invManageTransfers')}
-              >
-                <i className="fas fa-adjust"></i>
-                <span>Manage Transfers</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'invManageTransfers' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'invManageTransfers' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'transfers')}
-                  >
-                    <i className="fas fa-tasks mr-1"></i> Manage IPD Transfers
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'transfers')}
-                  >
-                    <i className="fas fa-tasks mr-1"></i> Manage OPD Transfers
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-danger font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'transfers')}
-                  >
-                    <i className="fas fa-history mr-1"></i> Transfer History
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Manage Requisitions */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('invRequisitions')}
-              >
-                <i className="fas fa-clipboard-check"></i>
-                <span>Manage Requisitions</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'invRequisitions' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'invRequisitions' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'requisitions')}
-                  >
-                    <i className="fas fa-file-invoice mr-1"></i> Manage IPD Request
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'requisitions')}
-                  >
-                    <i className="fas fa-file-invoice mr-1"></i> Manage OPD Request
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-danger font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'requisitions')}
-                  >
-                    <i className="fas fa-history mr-1"></i> Requisitions History
-                  </a>
-                </div>
-              )}
-            </li>
-          </div>
-        )}
-
-        {/* ----------------- 5. IPD PHARMACY 1, 2, 3 ----------------- */}
-        {(activeDept === 'ipd1' || activeDept === 'ipd2' || activeDept === 'ipd3') && (
-          <div id={`nav-${activeDept}`} className="department-nav">
-            <div className="sidebar-heading">
+        ) : activeDepartmentModules && activeDepartmentModules.length > 0 ? (
+          <div id={`nav-dept-${activeDept}`} className="department-nav">
+            <div className="sidebar-heading d-flex align-items-center justify-content-between mb-1">
               <span className="text-warning font-weight-bold">
-                💊 IPD Pharmacy {activeDept === 'ipd1' ? '1' : activeDept === 'ipd2' ? '2' : '3'}
+                {currentDeptObj?.label?.split(' ')[0] || '🏢'}{' '}
+                {(activeDepartmentRole?.name || currentRole || activeDept).toUpperCase()}
+              </span>
+              <span
+                className="badge badge-light border text-muted"
+                style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px' }}
+                title={`${activeDepartmentModules.length} modules assigned`}
+              >
+                {activeDepartmentModules.length} {activeDepartmentModules.length === 1 ? 'module' : 'modules'}
               </span>
             </div>
 
-            {/* Queue Management */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('ipdQueue')}
-              >
-                <i className="fas fa-fw fa-users"></i>
-                <span>Queue Managements</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'ipdQueue' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'ipdQueue' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-user-clock mr-1"></i> Waiting List
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-check-circle mr-1"></i> Completed List
-                  </a>
-                </div>
-              )}
-            </li>
+            {activeDepartmentModules.map((mod) => {
+              const subs = mod.submodules || [];
+              const hasSubs = subs.length > 0;
+              const isSubOpen = openSubmenu === (mod.code || mod.id);
 
-            {/* View IPD Pharmacy */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('ipdStore')}
-              >
-                <i className="fas fa-fw fa-capsules"></i>
-                <span>View IPD Pharmacy</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'ipdStore' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'ipdStore' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-pills mr-1"></i> View Inventory
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-barcode mr-1"></i> Scan Products
-                  </a>
-                </div>
-              )}
-            </li>
+              if (hasSubs) {
+                return (
+                  <li key={mod.id || mod.code} className="nav-item">
+                    <a
+                      className={`nav-link cursor-pointer d-flex align-items-center justify-content-between ${
+                        isSubOpen ? '' : 'collapsed'
+                      }`}
+                      onClick={() => toggleSubmenu(mod.code || mod.id)}
+                    >
+                      <div className="d-flex align-items-center text-truncate mr-2">
+                        <i className={`fas fa-fw ${getSafeIcon(mod.icon || 'fa-cubes')} mr-1`}></i>
+                        <span className="text-truncate">{mod.name}</span>
+                      </div>
+                      <i className={`fas fa-chevron-${isSubOpen ? 'down' : 'right'} text-xs text-white-50 flex-shrink-0`}></i>
+                    </a>
 
-            {/* Product Requisition */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('ipdRequisition')}
-              >
-                <i className="fas fa-adjust"></i>
-                <span>Product Requisition</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'ipdRequisition' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'ipdRequisition' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-store mr-1"></i> My Store Requisitions
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'requisitions')}
-                  >
-                    <i className="fas fa-warehouse mr-1"></i> Central Inventory Store
-                  </a>
-                </div>
-              )}
-            </li>
+                    {isSubOpen && (
+                      <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
+                        {subs.map((s) => {
+                          const isSubActive = Boolean(
+                            (s.route && window.location.hash === `#${s.route}`) ||
+                            (s.tab_key && activeTab === s.tab_key && !s.route)
+                          );
 
-            {/* Product Restore Point */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('ipdRestore')}
-              >
-                <i className="fas fa-fw fa-undo"></i>
-                <span>Product Restore Point</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'ipdRestore' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'ipdRestore' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
+                          return (
+                            <a
+                              key={s.id || s.code}
+                              className={`collapse-item cursor-pointer text-primary d-flex align-items-center py-1.5 px-3 ${
+                                isSubActive ? 'bg-light font-weight-bold text-dark border-left border-primary' : ''
+                              }`}
+                              onClick={() => handleSubmoduleClick(s, mod)}
+                              title={s.route ? `Route: ${s.route}` : s.name}
+                              style={{ fontSize: '0.82rem' }}
+                            >
+                              <i
+                                className={`fas ${getSafeIcon(s.icon || 'fa-circle')} mr-2 text-muted`}
+                                style={{ width: '15px', textAlign: 'center', fontSize: '0.8rem' }}
+                              ></i>
+                              <span className="text-truncate">{s.name}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </li>
+                );
+              }
+
+              // Single module without submodules
+              return (
+                <li key={mod.id || mod.code} className="nav-item">
                   <a
-                    className="collapse-item cursor-pointer text-warning font-weight-bold"
-                    onClick={() => setActiveTab('pharmacy')}
+                    className={`nav-link cursor-pointer d-flex align-items-center ${
+                      activeTab === mod.primary_tab ? 'active font-weight-bold' : ''
+                    }`}
+                    onClick={() => handleModuleClick(mod)}
                   >
-                    <i className="fas fa-ban mr-1"></i> Cancelled Transaction
+                    <i className={`fas fa-fw ${getSafeIcon(mod.icon || 'fa-cubes')} mr-1`}></i>
+                    <span className="text-truncate">{mod.name}</span>
                   </a>
-                  <a
-                    className="collapse-item cursor-pointer text-danger font-weight-bold"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-exclamation-circle mr-1"></i> Staled Transaction
-                  </a>
-                </div>
-              )}
-            </li>
+                </li>
+              );
+            })}
           </div>
-        )}
-
-        {/* ----------------- 6. OPD PHARMACY 1, 2 ----------------- */}
-        {(activeDept === 'opd1' || activeDept === 'opd2') && (
-          <div id={`nav-${activeDept}`} className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">
-                💊 OPD Pharmacy {activeDept === 'opd1' ? '1' : '2'}
-              </span>
-            </div>
-
-            {/* Queue Management */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('opdQueue')}
+        ) : (
+          /* Empty state if dynamic role has no modules */
+          <div id="nav-empty-dept" className="department-nav px-3 py-4 text-center text-white-50 small">
+            <i className="fas fa-cubes fa-2x mb-2 text-warning d-block"></i>
+            <div>No modules assigned to {(activeDepartmentRole?.name || activeDept)} in database.</div>
+            {isAdmin && (
+              <button
+                className="btn btn-sm btn-outline-warning mt-2 font-weight-bold"
+                style={{ fontSize: '0.75rem' }}
+                onClick={() => {
+                  setActiveTab('taskmanager');
+                  if (navigateToRoute) navigateToRoute('/admin/departments');
+                }}
               >
-                <i className="fas fa-fw fa-users"></i>
-                <span>Queue Managements</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'opdQueue' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'opdQueue' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-user-clock mr-1"></i> Waiting List
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-check-circle mr-1"></i> Completed List
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* View OPD Pharmacy */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('opdStore')}
-              >
-                <i className="fas fa-fw fa-capsules"></i>
-                <span>View OPD Pharmacy</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'opdStore' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'opdStore' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-pills mr-1"></i> View Inventory
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-barcode mr-1"></i> Scan Products
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Product Requisition */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('opdRequisition')}
-              >
-                <i className="fas fa-adjust"></i>
-                <span>Product Requisition</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'opdRequisition' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'opdRequisition' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('pharmacy')}
-                  >
-                    <i className="fas fa-store mr-1"></i> My Store Requisitions
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('inventory', 'requisitions')}
-                  >
-                    <i className="fas fa-warehouse mr-1"></i> Central Inventory Store
-                  </a>
-                </div>
-              )}
-            </li>
-          </div>
-        )}
-
-        {/* ----------------- 7. LABORATORY ----------------- */}
-        {activeDept === 'laboratory' && (
-          <div id="nav-laboratory" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">🔬 Laboratory</span>
-            </div>
-
-            {/* Queue Management */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('labQueue')}
-              >
-                <i className="fas fa-users"></i>
-                <span>Queue Management</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'labQueue' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'labQueue' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('radiolab')}
-                  >
-                    <i className="fas fa-hourglass-start mr-1"></i> Waiting List
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('radiolab')}
-                  >
-                    <i className="fas fa-clipboard-check mr-1"></i> Completed List
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Manage Lab Inventory */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('labInventory')}
-              >
-                <i className="fas fa-clipboard-list"></i>
-                <span>Manage Lab Inventory</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'labInventory' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'labInventory' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('radiolab')}
-                  >
-                    <i className="fas fa-vials mr-1"></i> Lab Inventory
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Search for Patients */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('patients')}
-              >
-                <i className="fas fa-search"></i>
-                <span>Search for Patients</span>
-              </a>
-            </li>
-          </div>
-        )}
-
-        {/* ----------------- 8. RADIOLOGY ----------------- */}
-        {activeDept === 'radiology' && (
-          <div id="nav-radiology" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">📡 Radiology</span>
-            </div>
-
-            {/* Queue Management */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('radioQueue')}
-              >
-                <i className="fas fa-users"></i>
-                <span>Queue Management</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'radioQueue' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'radioQueue' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('radiolab')}
-                  >
-                    <i className="fas fa-hourglass-start mr-1"></i> Waiting List
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('radiolab')}
-                  >
-                    <i className="fas fa-clipboard-check mr-1"></i> Completed List
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Manage Scan Inventory */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('radioInventory')}
-              >
-                <i className="fas fa-clipboard-list"></i>
-                <span>Manage Scan Inventory</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'radioInventory' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'radioInventory' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('radiolab')}
-                  >
-                    <i className="fas fa-x-ray mr-1"></i> Scan Inventory
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Search for Patients */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('patients')}
-              >
-                <i className="fas fa-search"></i>
-                <span>Search for Patients</span>
-              </a>
-            </li>
-          </div>
-        )}
-
-        {/* ----------------- 9. BILLINGS ----------------- */}
-        {activeDept === 'billings' && (
-          <div id="nav-billings" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">💰 Billings</span>
-            </div>
-
-            {/* Queues Management */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('billQueue')}
-              >
-                <i className="fas fa-users"></i>
-                <span>Queues Management</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'billQueue' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'billQueue' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary font-weight-bold"
-                    onClick={() => setActiveTab('billings')}
-                  >
-                    <i className="fas fa-receipt mr-1"></i> Unprocessed Bills
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-warning font-weight-bold"
-                    onClick={() => setActiveTab('billings')}
-                  >
-                    <i className="fas fa-adjust mr-1"></i> Partially Cleared
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-success font-weight-bold"
-                    onClick={() => setActiveTab('billings')}
-                  >
-                    <i className="fas fa-check-double mr-1"></i> Fully Paid
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-info font-weight-bold"
-                    onClick={() => setActiveTab('billings')}
-                  >
-                    <i className="fas fa-list-alt mr-1"></i> Transactions log
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Daily Revenue Chart */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('billings')}
-              >
-                <i className="fas fa-chart-line"></i>
-                <span>Daily Revenue Chart</span>
-              </a>
-            </li>
-
-            {/* Transaction Day Book */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('billings')}
-              >
-                <i className="fas fa-list"></i>
-                <span>Transaction Day Book</span>
-              </a>
-            </li>
-
-            {/* Search for Patients */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('patients')}
-              >
-                <i className="fas fa-search"></i>
-                <span>Search for Patients</span>
-              </a>
-            </li>
-          </div>
-        )}
-
-        {/* ----------------- 10. REPORTING ----------------- */}
-        {activeDept === 'reporting' && (
-          <div id="nav-reporting" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">📊 Reporting Unit</span>
-            </div>
-
-            {/* Ambulatory Reports */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('repAmbulatory')}
-              >
-                <i className="fas fa-chart-line"></i>
-                <span>Ambulatory Reports</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'repAmbulatory' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'repAmbulatory' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'ambulatory', 'patients_reg')}
-                  >
-                    <i className="fas fa-user-plus mr-1"></i> Patients Registration
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'ambulatory', 'visits')}
-                  >
-                    <i className="fas fa-stethoscope mr-1"></i> Visit report
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'ambulatory', 'admissions')}
-                  >
-                    <i className="fas fa-bed mr-1"></i> IPD Admission Reports
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'ambulatory', 'deactivated')}
-                  >
-                    <i className="fas fa-user-slash mr-1"></i> Profile Deactivation Report
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Billing Reports */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('repBilling')}
-              >
-                <i className="fas fa-chart-line"></i>
-                <span>Billing Reports</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'repBilling' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'repBilling' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'billing', 'invoices')}
-                  >
-                    <i className="fas fa-file-invoice mr-1"></i> Billing Invoice Listing
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'billing', 'exceptions')}
-                  >
-                    <i className="fas fa-exclamation-triangle mr-1"></i> Exception Bills Report
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'billing', 'cancelled')}
-                  >
-                    <i className="fas fa-times-circle mr-1"></i> Cancelled Bills Report
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'billing', 'transaction_book')}
-                  >
-                    <i className="fas fa-book mr-1"></i> Complete Transaction Book
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Pharmacies & Inventory */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('repInventory')}
-              >
-                <i className="fas fa-chart-line"></i>
-                <span>Pharmacies & Inventory</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'repInventory' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'repInventory' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'inventory', 'expired')}
-                  >
-                    <i className="fas fa-calendar-times mr-1"></i> Expired Products Report
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'inventory', 'low_stock')}
-                  >
-                    <i className="fas fa-hourglass-end mr-1"></i> Short-Dated Products
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'inventory', 'low_stock')}
-                  >
-                    <i className="fas fa-arrow-down mr-1"></i> Low Stock Report
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'inventory', 'low_stock')}
-                  >
-                    <i className="fas fa-ban mr-1"></i> Out of Stock Report
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'inventory', 'requisitions')}
-                  >
-                    <i className="fas fa-dolly mr-1"></i> Product Requisitions Detail
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'inventory', 'stock_analysis')}
-                  >
-                    <i className="fas fa-chart-pie mr-1"></i> Stock Analysis Report
-                  </a>
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'inventory', 'vendors')}
-                  >
-                    <i className="fas fa-hand-holding-usd mr-1"></i> Vendors & Expense Report
-                  </a>
-                </div>
-              )}
-            </li>
-
-            {/* Other Reports */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer collapsed"
-                onClick={() => toggleSubmenu('repOthers')}
-              >
-                <i className="fas fa-chart-line"></i>
-                <span>Other Reports</span>
-                <i className={`fas fa-chevron-${openSubmenu === 'repOthers' ? 'down' : 'right'} float-right text-xs mt-1`}></i>
-              </a>
-              {openSubmenu === 'repOthers' && (
-                <div className="bg-white py-2 collapse-inner rounded mx-3 mb-2 shadow-sm">
-                  <a
-                    className="collapse-item cursor-pointer text-primary"
-                    onClick={() => setActiveTab('reporting', 'others', 'appointments')}
-                  >
-                    <i className="fas fa-calendar mr-1"></i> Appointments Reports
-                  </a>
-                </div>
-              )}
-            </li>
-          </div>
-        )}
-
-        {/* ----------------- 14. CUSTOM / GENERAL DEPARTMENT FALLBACK ----------------- */}
-        {!['frontdesk', 'nursing', 'clinical', 'inventory', 'ipd1', 'ipd2', 'ipd3', 'opd1', 'opd2', 'laboratory', 'radiology', 'billings', 'reporting'].includes(activeDept) && (
-          <div id="nav-custom-dept" className="department-nav">
-            <div className="sidebar-heading">
-              <span className="text-warning font-weight-bold">
-                🏢 {currentRole || activeDept} Unit
-              </span>
-            </div>
-
-            {/* Department Queue */}
-            <li className="nav-item">
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('queues')}
-              >
-                <i className="fas fa-fw fa-clock"></i>
-                <span>Department Waiting List</span>
-              </a>
-            </li>
-
-            {/* Patients Directory */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('patients')}
-              >
-                <i className="fas fa-fw fa-users"></i>
-                <span>Patients Directory</span>
-              </a>
-            </li>
-
-            {/* Staff Profile */}
-            <li className="nav-item" style={{ marginTop: '-10px' }}>
-              <a
-                className="nav-link cursor-pointer"
-                onClick={() => setActiveTab('profile', 'overview')}
-              >
-                <i className="fas fa-fw fa-user"></i>
-                <span>My Profile</span>
-              </a>
-            </li>
+                <i className="fas fa-key mr-1"></i> Configure Permissions
+              </button>
+            )}
           </div>
         )}
       </div>

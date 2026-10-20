@@ -28,6 +28,174 @@ const COMMON_DIAGNOSES = [
   'Tension Headache',
 ];
 
+// Standard commercial liquid dispensing bottle sizes in hospital pharmacy
+export const STANDARD_HOSPITAL_BOTTLE_SIZES = ['15', '30', '50', '60', '100', '120', '150', '200'];
+
+// Comprehensive mapping of Dosage Form to Route of Administration
+export const DOSAGE_FORM_ROUTES_MAP = {
+  Tablet: {
+    defaultRoute: 'Oral',
+    routes: ['Oral', 'Sublingual', 'Buccal'],
+  },
+  Caplet: {
+    defaultRoute: 'Oral',
+    routes: ['Oral', 'Sublingual'],
+  },
+  Capsule: {
+    defaultRoute: 'Oral',
+    routes: ['Oral'],
+  },
+  Syrup: {
+    defaultRoute: 'Oral',
+    routes: ['Oral'],
+  },
+  Suspension: {
+    defaultRoute: 'Oral',
+    routes: ['Oral'],
+  },
+  Drops: {
+    defaultRoute: 'Oral',
+    routes: ['Oral', 'Ophthalmic (Eye)', 'Otic (Ear)', 'Nasal'],
+  },
+  Injection: {
+    defaultRoute: 'Intravenous',
+    routes: ['Intravenous', 'Intramuscular', 'Subcutaneous', 'Intradermal', 'IV Infusion'],
+  },
+  Suppository: {
+    defaultRoute: 'Rectal',
+    routes: ['Rectal', 'Vaginal'],
+  },
+  Inhaler: {
+    defaultRoute: 'Inhalation',
+    routes: ['Inhalation', 'Nasal'],
+  },
+  Ointment: {
+    defaultRoute: 'Topical',
+    routes: ['Topical', 'Transdermal', 'Ophthalmic (Eye)', 'Rectal'],
+  },
+  Sachet: {
+    defaultRoute: 'Oral',
+    routes: ['Oral'],
+  },
+};
+
+export const ALL_COMMON_ROUTES = [
+  'Oral',
+  'Intravenous',
+  'Intramuscular',
+  'Subcutaneous',
+  'IV Infusion',
+  'Intradermal',
+  'Topical',
+  'Inhalation',
+  'Sublingual',
+  'Buccal',
+  'Rectal',
+  'Vaginal',
+  'Ophthalmic (Eye)',
+  'Otic (Ear)',
+  'Nasal',
+  'Transdermal',
+];
+
+export const getOptimalRouteForDrug = (name = '', form = 'Tablet') => {
+  const n = (name || '').toLowerCase();
+  if (form === 'Injection') {
+    if (n.includes('im ') || n.includes('intramuscular') || n.includes(' im') || n.includes('(im)')) return 'Intramuscular';
+    if (n.includes('sc ') || n.includes('subcutaneous') || n.includes('(sc)')) return 'Subcutaneous';
+    if (n.includes('infusion')) return 'IV Infusion';
+    return 'Intravenous';
+  }
+  if (form === 'Drops') {
+    if (n.includes('eye') || n.includes('ophth')) return 'Ophthalmic (Eye)';
+    if (n.includes('ear') || n.includes('otic')) return 'Otic (Ear)';
+    if (n.includes('nasal') || n.includes('nose')) return 'Nasal';
+    return 'Oral';
+  }
+  if (form === 'Ointment') {
+    if (n.includes('eye') || n.includes('ophth')) return 'Ophthalmic (Eye)';
+    if (n.includes('rectal') || n.includes('anus')) return 'Rectal';
+    return 'Topical';
+  }
+  if (form === 'Suppository') {
+    if (n.includes('pessary') || n.includes('vag')) return 'Vaginal';
+    return 'Rectal';
+  }
+  if (form === 'Tablet' || form === 'Caplet') {
+    if (n.includes('sublingual') || n.includes('sl ')) return 'Sublingual';
+    if (n.includes('buccal')) return 'Buccal';
+    return 'Oral';
+  }
+  return DOSAGE_FORM_ROUTES_MAP[form]?.defaultRoute || 'Oral';
+};
+
+/**
+ * Automatically determine the optimal hospital bottle size to dispense:
+ * 1. Checks if the drug product name explicitly specifies a bottle size (e.g. "100ml", "60ml", "150ml")
+ *    while avoiding dosage concentration (e.g. 120mg/5ml).
+ * 2. Calculates required treatment volume (Qty/Dose * times/day * days).
+ * 3. Matches against standard commercial hospital bottle sizes (15ml, 30ml, 50ml, 60ml, 100ml, 120ml, 150ml, 200ml).
+ */
+export const getOptimalBottleSize = (name = '', form = 'Syrup', qty = 10, freq = '', durVal = 5, durUnit = 'Day(s)') => {
+  if (form === 'Drops') {
+    return '15';
+  }
+
+  // 1. Look for packaging bottle volume inside drug name (e.g. "60ml", "100ml", "120ml", "150ml", "200ml", "30ml", "50ml")
+  // Make sure not to capture concentration like "120mg/5ml" or "125mg-5ml"
+  const cleanName = (name || '').trim();
+  if (cleanName) {
+    const matches = [...cleanName.matchAll(/(?<!\d+\s*(?:mg|g|mcg|iu)\s*[\/-])\b(\d+)\s*ml\b/gi)];
+    for (const m of matches) {
+      const vol = parseInt(m[1], 10);
+      if ([15, 30, 50, 60, 100, 120, 150, 200, 250, 300, 500].includes(vol)) {
+        return String(vol);
+      }
+    }
+  }
+
+  // 2. Calculate required treatment course volume
+  let timesPerDay = 1;
+  const f = (freq || '').toLowerCase();
+  if (f.includes('bd') || f.includes('twice') || f.includes('12 hourly') || f.includes('12-hourly')) timesPerDay = 2;
+  else if (f.includes('tds') || f.includes('three') || f.includes('8 hourly') || f.includes('8-hourly')) timesPerDay = 3;
+  else if (f.includes('qds') || f.includes('four') || f.includes('6 hourly') || f.includes('6-hourly')) timesPerDay = 4;
+  else if (f.includes('q4h') || f.includes('4 hourly') || f.includes('every 4 hours')) timesPerDay = 6;
+  else if (f.includes('q2h') || f.includes('2 hourly')) timesPerDay = 12;
+  else if (f.includes('hourly')) timesPerDay = 24;
+  else if (f.includes('alt die') || f.includes('other day')) timesPerDay = 0.5;
+  else if (f.includes('weekly')) timesPerDay = 1 / 7;
+  else if (f.includes('stat') || f.includes('single')) timesPerDay = 1;
+
+  const dVal = Math.max(1, Number(durVal) || 1);
+  let dayMultiplier = 1;
+  if (durUnit === 'Week(s)') dayMultiplier = 7;
+  else if (durUnit === 'Month(s)') dayMultiplier = 30;
+
+  const totalDays = f.includes('stat') ? 1 : Math.round(dVal * dayMultiplier);
+  const numDose = Math.max(0.1, Number(qty) || 1);
+  const totalVolume = Math.round(numDose * timesPerDay * totalDays);
+
+  // 3. Match against standard hospital sizes:
+  if (totalVolume <= 15) return '15';
+  if (totalVolume <= 30) return '30';
+  if (totalVolume <= 50) return '50';
+  if (totalVolume <= 60) return '60';
+  if (totalVolume <= 100) return '100';
+  if (totalVolume <= 120) return '120';
+  if (totalVolume <= 150) return '150';
+  if (totalVolume <= 200) return '200';
+
+  // If > 200ml (e.g. 240ml -> 120ml [2 bottles], 300ml -> 150ml [2 bottles] or 100ml [3 bottles], 400ml -> 200ml)
+  if (totalVolume % 150 === 0) return '150';
+  if (totalVolume % 120 === 0) return '120';
+  if (totalVolume % 100 === 0) return '100';
+  if (totalVolume % 200 === 0) return '200';
+  if (totalVolume % 60 === 0) return '60';
+
+  return '100';
+};
+
 export default function DoctorConsultationModal({
   isOpen,
   patient,
@@ -51,16 +219,27 @@ export default function DoctorConsultationModal({
   const [treatmentPlan, setTreatmentPlan] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
 
-  // Quick Prescription list inside consultation
+  // Clinical Medication Prescription state
   const [prescriptions, setPrescriptions] = useState([]);
   const [drugName, setDrugName] = useState('');
-  const [dosage, setDosage] = useState('');
+  const [dosageForm, setDosageForm] = useState('Tablet'); // 'Tablet', 'Syrup', 'Caplet', 'Capsule', 'Drops', 'Suspension', 'Injection', 'Suppository', 'Inhaler', 'Ointment', 'Sachet'
+  const [medRoute, setMedRoute] = useState('Oral');
+  const [strength, setStrength] = useState('500mg');
+  const [doseUnit, setDoseUnit] = useState('tab');
+  const [qtyDose, setQtyDose] = useState('1');
   const [frequency, setFrequency] = useState('Twice daily (bd)');
-  const [duration, setDuration] = useState('5 days');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [durationVal, setDurationVal] = useState('5');
+  const [durationUnit, setDurationUnit] = useState('Day(s)');
+  const [medComment, setMedComment] = useState('');
+  const [syrupBottleSize, setSyrupBottleSize] = useState('100');
+  const [isBottleSizeManual, setIsBottleSizeManual] = useState(false);
 
   // Covered Medication Tariffs for Patient's Sponsor & Plan
   const [patientDetails, setPatientDetails] = useState(patient || null);
   const [coveredMedications, setCoveredMedications] = useState([]);
+  const [generalMedications, setGeneralMedications] = useState([]);
+  const [tariffMode, setTariffMode] = useState('covered'); // 'covered' | 'general'
   const [loadingCoveredMeds, setLoadingCoveredMeds] = useState(false);
   const [showDrugDropdown, setShowDrugDropdown] = useState(false);
   const [selectedMedTariff, setSelectedMedTariff] = useState(null);
@@ -75,6 +254,8 @@ export default function DoctorConsultationModal({
   const [labOrders, setLabOrders] = useState([]);
   const [labTestName, setLabTestName] = useState('');
   const [coveredLabTariffs, setCoveredLabTariffs] = useState([]);
+  const [generalLabTariffs, setGeneralLabTariffs] = useState([]);
+  const [labTariffMode, setLabTariffMode] = useState('covered'); // 'covered' | 'general'
   const [loadingCoveredLabs, setLoadingCoveredLabs] = useState(false);
   const [showLabDropdown, setShowLabDropdown] = useState(false);
   const [selectedLabTariff, setSelectedLabTariff] = useState(null);
@@ -364,41 +545,98 @@ export default function DoctorConsultationModal({
     (typeof patientDetails?.plan === 'object' ? patientDetails?.plan?.plan : '') ||
     '';
 
-  // Load covered medications attached to this patient's Sponsor and Plan
+  const patientCategory = (
+    patientDetails?.category_name ||
+    (typeof patientDetails?.category === 'object' ? patientDetails?.category?.category : '') ||
+    patient?.category_name ||
+    appointment?.category_name ||
+    ''
+  ).toLowerCase();
+
+  const sponsorCategory = (
+    patientDetails?.sponsor_category ||
+    (typeof patientDetails?.sponsor === 'object' && patientDetails?.sponsor?.category
+      ? (typeof patientDetails?.sponsor?.category === 'object'
+          ? patientDetails?.sponsor?.category?.category
+          : patientDetails?.sponsor?.category)
+      : '') ||
+    patient?.sponsor_category ||
+    appointment?.sponsor_category ||
+    ''
+  ).toLowerCase();
+
+  const isPrivatePatient = Boolean(
+    !currentSponsorName ||
+    patientCategory.includes('private') ||
+    sponsorCategory.includes('private') ||
+    currentSponsorName.toLowerCase().includes('private') ||
+    currentSponsorName.toLowerCase().includes('self')
+  );
+
+  const isHmoPatient = !isPrivatePatient && Boolean(currentSponsorName);
+
+  // Load covered medications attached to this patient's Sponsor and Plan AND general out-of-pocket prices
   const loadPatientMedicationTariffs = async (pId, sId, plId, searchQuery = '') => {
     try {
       setLoadingCoveredMeds(true);
-      const params = {};
-      if (pId) params.patient = pId;
-      if (sId) params.sponsor = sId;
-      if (plId) params.plan = plId;
-      if (searchQuery) params.search = searchQuery;
+      const coveredParams = { tariff_type: 'covered' };
+      if (pId) coveredParams.patient = pId;
+      if (sId) coveredParams.sponsor = sId;
+      if (plId) coveredParams.plan = plId;
+      if (searchQuery) coveredParams.search = searchQuery;
 
-      const res = await api.getMedicationFees(params);
-      const list = Array.isArray(res) ? res : (res?.medications || res?.results || []);
-      setCoveredMedications(list);
+      const [coveredRes, generalRes] = await Promise.all([
+        api.getMedicationFees(coveredParams).catch(() => ({ medications: [] })),
+        api.getMedicationFees({ tariff_type: 'general', search: searchQuery }).catch(() => ({ medications: [] })),
+      ]);
+
+      const coveredList = Array.isArray(coveredRes) ? coveredRes : (coveredRes?.medications || coveredRes?.results || []);
+      const generalList = Array.isArray(generalRes) ? generalRes : (generalRes?.medications || generalRes?.results || []);
+
+      setCoveredMedications(coveredList);
+      setGeneralMedications(generalList);
+
+      // Auto-set tariffMode: Private patients always default to General Price; HMO patients default to covered
+      if (isPrivatePatient) {
+        setTariffMode('general');
+      } else {
+        setTariffMode('covered');
+      }
     } catch (err) {
-      console.error('Error loading covered medication tariffs for sponsor/plan:', err);
+      console.error('Error loading medication tariffs for sponsor/plan & general:', err);
     } finally {
       setLoadingCoveredMeds(false);
     }
   };
 
-  // 1. Load covered laboratory investigation charges attached to this patient's Sponsor and Plan
+  // 1. Load covered laboratory investigation charges attached to this patient's Sponsor and Plan AND general prices
   const loadPatientLabTariffs = async (pId, sId, plId, searchQuery = '') => {
     try {
       setLoadingCoveredLabs(true);
-      const params = {};
-      if (pId) params.patient = pId;
-      if (sId) params.sponsor = sId;
-      if (plId) params.plan = plId;
-      if (searchQuery) params.search = searchQuery;
+      const coveredParams = { tariff_type: 'covered' };
+      if (pId) coveredParams.patient = pId;
+      if (sId) coveredParams.sponsor = sId;
+      if (plId) coveredParams.plan = plId;
+      if (searchQuery) coveredParams.search = searchQuery;
 
-      const labRes = await api.getLabCharges(params).catch(() => ({ charges: [] }));
-      const labList = labRes?.charges || (Array.isArray(labRes) ? labRes : []);
-      setCoveredLabTariffs(labList);
+      const [coveredRes, generalRes] = await Promise.all([
+        api.getLabCharges(coveredParams).catch(() => ({ charges: [] })),
+        api.getLabCharges({ tariff_type: 'general', search: searchQuery }).catch(() => ({ charges: [] })),
+      ]);
+
+      const coveredList = Array.isArray(coveredRes) ? coveredRes : (coveredRes?.charges || coveredRes?.results || []);
+      const generalList = Array.isArray(generalRes) ? generalRes : (generalRes?.charges || generalRes?.results || []);
+
+      setCoveredLabTariffs(coveredList);
+      setGeneralLabTariffs(generalList);
+
+      if (isPrivatePatient) {
+        setLabTariffMode('general');
+      } else {
+        setLabTariffMode('covered');
+      }
     } catch (err) {
-      console.error('Error loading covered laboratory tariffs for sponsor/plan:', err);
+      console.error('Error loading covered laboratory tariffs for sponsor/plan & general:', err);
     } finally {
       setLoadingCoveredLabs(false);
     }
@@ -500,17 +738,19 @@ export default function DoctorConsultationModal({
   };
 
   // Filter covered medications for real-time fast autocomplete
+  const activeMedicationsList = tariffMode === 'general' ? generalMedications : coveredMedications;
+
   const filteredCoveredMeds = useMemo(() => {
-    if (!drugName.trim()) return coveredMedications;
+    if (!drugName.trim()) return activeMedicationsList;
     const q = drugName.trim().toLowerCase();
-    return coveredMedications.filter(
+    return activeMedicationsList.filter(
       (m) =>
         m.product_name?.toLowerCase().includes(q) ||
         (m.product_id && String(m.product_id).toLowerCase().includes(q)) ||
         (m.sku && String(m.sku).toLowerCase().includes(q)) ||
         (m.product_code && String(m.product_code).toLowerCase().includes(q))
     );
-  }, [coveredMedications, drugName]);
+  }, [activeMedicationsList, drugName]);
 
   const handleDrugInputChange = (val) => {
     setDrugName(val);
@@ -534,11 +774,126 @@ export default function DoctorConsultationModal({
     }
   };
 
+  const handleDosageFormChange = (newForm) => {
+    setDosageForm(newForm);
+    const mappedRoute = getOptimalRouteForDrug(drugName, newForm);
+    setMedRoute(mappedRoute);
+    if (newForm === 'Tablet') {
+      setDoseUnit('tab');
+      setQtyDose('1');
+      setStrength('500mg');
+    } else if (newForm === 'Caplet') {
+      setDoseUnit('caplet');
+      setQtyDose('1');
+      setStrength('500mg');
+    } else if (newForm === 'Capsule') {
+      setDoseUnit('cap');
+      setQtyDose('1');
+      setStrength('500mg');
+    } else if (newForm === 'Syrup' || newForm === 'Suspension') {
+      setDoseUnit('ml');
+      setQtyDose('10');
+      setStrength('120mg - 5ml');
+      setIsBottleSizeManual(false);
+      const autoSize = getOptimalBottleSize(drugName, newForm, '10', frequency, durationVal, durationUnit);
+      setSyrupBottleSize(String(autoSize));
+    } else if (newForm === 'Drops') {
+      setDoseUnit('drops');
+      setQtyDose('3');
+      setStrength('100mg - 1ml');
+      setIsBottleSizeManual(false);
+      setSyrupBottleSize('15');
+    } else if (newForm === 'Suppository') {
+      setDoseUnit('supp');
+      setQtyDose('1');
+      setStrength('125mg');
+    } else if (newForm === 'Inhaler') {
+      setDoseUnit('puffs');
+      setQtyDose('2');
+      setStrength('100mcg');
+    } else if (newForm === 'Sachet') {
+      setDoseUnit('sachet');
+      setQtyDose('1');
+      setStrength('Standard');
+    } else if (newForm === 'Injection') {
+      setDoseUnit('vial');
+      setQtyDose('1');
+      setStrength('500mg - 2ml');
+    } else if (newForm === 'Ointment') {
+      setDoseUnit('tube');
+      setQtyDose('1');
+      setStrength('15g');
+    }
+  };
+
   const handleSelectCoveredDrug = (med) => {
     if (!med) return;
-    setDrugName(med.product_name);
-    setSelectedMedTariff(med);
+    const name = med.product_name || med.item || '';
+    setDrugName(name);
+    const isGeneral = tariffMode === 'general' || med.is_general || (!med.sponsor_id && !med.plan_id);
+    setSelectedMedTariff({
+      ...med,
+      is_pay_from_purse: isGeneral,
+      payment_source: isGeneral ? 'pay_from_purse' : 'plan_covered',
+      payment_label: isGeneral ? 'Pay from your purse' : (med.plan_name || 'Covered Plan'),
+    });
     setShowDrugDropdown(false);
+
+    const n = name.toLowerCase();
+    const uom = (med.minimum_UoM || med.uom || med.unit || '').toLowerCase();
+
+    // 1. Identify Dosage Form from Database Unit of Measure (UoM) or Drug Name keywords
+    let detectedForm = 'Tablet';
+    if (uom === 'bottles' || n.includes('syp') || n.includes('syrup') || n.includes('susp') || n.includes('liquid') || n.includes('elixir')) {
+      detectedForm = 'Syrup';
+    } else if (uom === 'drops' || n.includes('drop') || n.includes('gutt')) {
+      detectedForm = 'Drops';
+    } else if (uom === 'capsules' || n.includes('capsule') || (n.includes('cap ') && !n.includes('caplet')) || n.endsWith(' cap')) {
+      detectedForm = 'Capsule';
+    } else if (n.includes('caplet')) {
+      detectedForm = 'Caplet';
+    } else if (uom === 'sachets' || n.includes('sachet') || n.includes('powder') || n.includes('ors')) {
+      detectedForm = 'Sachet';
+    } else if (uom === 'suppository' || n.includes('supp') || n.includes('pessary')) {
+      detectedForm = 'Suppository';
+    } else if (uom === 'ampoules' || uom === 'vial' || uom === 'syringes' || n.includes('inj') || n.includes('iv ') || n.includes('im ') || n.includes('infusion')) {
+      detectedForm = 'Injection';
+    } else if (uom === 'puffs' || n.includes('inhal') || n.includes('puff') || n.includes('rotahaler')) {
+      detectedForm = 'Inhaler';
+    } else if (uom === 'tubes' || n.includes('ointment') || n.includes('cream') || n.includes('gel')) {
+      detectedForm = 'Ointment';
+    } else {
+      detectedForm = 'Tablet';
+    }
+
+    handleDosageFormChange(detectedForm);
+    const optimalRoute = getOptimalRouteForDrug(name, detectedForm);
+    setMedRoute(optimalRoute);
+    setIsBottleSizeManual(false);
+
+    // 2. Intelligently extract Strength from the drug name if present
+    // Matches e.g. "120mg/5ml", "250mg - 5ml", "500mg", "625mg", "1g", "50mcg", "15g", "10ml"
+    const strengthMatch = name.match(/(\d+(?:\.\d+)?\s*(?:mg|g|mcg|iu|%)\s*(?:[\/-]\s*\d+\s*ml)?|\d+\s*ml)/i);
+    if (strengthMatch) {
+      const cleanStrength = strengthMatch[1].replace('/', ' - ').replace(/\s+/g, ' ').trim();
+      setStrength(cleanStrength);
+    } else {
+      // Default standard strength per form if not found in name
+      if (detectedForm === 'Syrup') setStrength('120mg - 5ml');
+      else if (detectedForm === 'Drops') setStrength('100mg - 1ml');
+      else if (detectedForm === 'Inhaler') setStrength('100mcg');
+      else if (detectedForm === 'Suppository') setStrength('125mg');
+      else if (detectedForm === 'Injection') setStrength('500mg - 2ml');
+      else if (detectedForm === 'Ointment') setStrength('15g');
+      else if (detectedForm === 'Sachet') setStrength('Standard');
+      else setStrength('500mg');
+    }
+
+    // 3. Automatically determine and set the optimal hospital bottle size to dispense
+    if (['Syrup', 'Suspension', 'Drops'].includes(detectedForm)) {
+      const autoSize = getOptimalBottleSize(name, detectedForm, qtyDose, frequency, durationVal, durationUnit);
+      setSyrupBottleSize(String(autoSize));
+    }
   };
 
   const handleDrugKeyDown = (e) => {
@@ -559,16 +914,18 @@ export default function DoctorConsultationModal({
     }
   };
 
-  // 1. Filter covered laboratory charges for real-time fast autocomplete
+  // 1. Filter active laboratory charges for real-time fast autocomplete
+  const activeLabTariffList = labTariffMode === 'general' ? generalLabTariffs : coveredLabTariffs;
+
   const filteredCoveredLabs = useMemo(() => {
     const query = (labTestName || investigationName).trim().toLowerCase();
-    if (!query) return coveredLabTariffs;
-    return coveredLabTariffs.filter(
+    if (!query) return activeLabTariffList;
+    return activeLabTariffList.filter(
       (l) =>
         l.item?.toLowerCase().includes(query) ||
         (l.item_id && l.item_id.toLowerCase().includes(query))
     );
-  }, [coveredLabTariffs, labTestName, investigationName]);
+  }, [activeLabTariffList, labTestName, investigationName]);
 
   const handleLabInputChange = (val) => {
     setLabTestName(val);
@@ -597,7 +954,13 @@ export default function DoctorConsultationModal({
     if (!lab) return;
     setLabTestName(lab.item);
     setInvestigationName(lab.item);
-    setSelectedLabTariff(lab);
+    const isGeneral = labTariffMode === 'general' || lab.is_general || (!lab.sponsor_id && !lab.plan_id);
+    setSelectedLabTariff({
+      ...lab,
+      is_pay_from_purse: isGeneral,
+      payment_source: isGeneral ? 'pay_from_purse' : 'plan_covered',
+      payment_label: isGeneral ? 'Pay from your purse' : (lab.plan_name || 'Covered Plan'),
+    });
     setShowLabDropdown(false);
   };
 
@@ -691,6 +1054,28 @@ export default function DoctorConsultationModal({
         ((s.service_id || s.item_id) && (s.service_id || s.item_id).toLowerCase().includes(query))
     );
   }, [coveredOtherServices, otherServiceName]);
+
+  // Total consultation bill amount across all 4 departments (Drugs, Lab, Radiology, Other Services)
+  const totalConsultationBill = useMemo(() => {
+    let sum = 0;
+    prescriptions.forEach((p) => {
+      const q = Number(p.dispense_quantity || 1);
+      const r = Number(p.tariff_rate || 0);
+      sum += (q * r);
+    });
+    labOrders.forEach((l) => {
+      sum += Number(l.tariff_rate || 0);
+    });
+    radiologyOrders.forEach((r) => {
+      sum += Number(r.tariff_rate || 0);
+    });
+    otherServiceOrders.forEach((s) => {
+      sum += Number(s.tariff_rate || 0);
+    });
+    return sum;
+  }, [prescriptions, labOrders, radiologyOrders, otherServiceOrders]);
+
+  const totalBillableCount = prescriptions.length + labOrders.length + radiologyOrders.length + otherServiceOrders.length;
 
   const handleOtherServiceInputChange = (val) => {
     setOtherServiceName(val);
@@ -818,37 +1203,176 @@ export default function DoctorConsultationModal({
     setSelectedComplaints(selectedComplaints.filter((c) => c !== comp));
   };
 
+  // Automatically calculate & pick optimal Hospital Bottle Size for syrups, suspensions, drops
+  useEffect(() => {
+    if (['Syrup', 'Suspension', 'Drops'].includes(dosageForm) && !isBottleSizeManual) {
+      const autoSize = getOptimalBottleSize(drugName, dosageForm, qtyDose, frequency, durationVal, durationUnit);
+      if (autoSize && String(syrupBottleSize) !== String(autoSize)) {
+        setSyrupBottleSize(String(autoSize));
+      }
+    }
+  }, [drugName, dosageForm, qtyDose, frequency, durationVal, durationUnit, isBottleSizeManual]);
+
+  // Real-time Pharmacy Dispensing Calculator
+  const calculateDispense = () => {
+    let timesPerDay = 1;
+    const freqLower = (frequency || '').toLowerCase();
+    if (freqLower.includes('bd') || freqLower.includes('twice') || freqLower.includes('12 hourly') || freqLower.includes('12-hourly')) {
+      timesPerDay = 2;
+    } else if (freqLower.includes('tds') || freqLower.includes('three') || freqLower.includes('8 hourly') || freqLower.includes('8-hourly')) {
+      timesPerDay = 3;
+    } else if (freqLower.includes('qds') || freqLower.includes('four') || freqLower.includes('6 hourly') || freqLower.includes('6-hourly')) {
+      timesPerDay = 4;
+    } else if (freqLower.includes('q4h') || freqLower.includes('4 hourly') || freqLower.includes('every 4 hours')) {
+      timesPerDay = 6;
+    } else if (freqLower.includes('q2h') || freqLower.includes('2 hourly')) {
+      timesPerDay = 12;
+    } else if (freqLower.includes('hourly')) {
+      timesPerDay = 24;
+    } else if (freqLower.includes('alt die') || freqLower.includes('other day')) {
+      timesPerDay = 0.5;
+    } else if (freqLower.includes('weekly')) {
+      timesPerDay = 1 / 7;
+    } else if (freqLower.includes('stat') || freqLower.includes('single')) {
+      timesPerDay = 1;
+    } else {
+      timesPerDay = 1;
+    }
+
+    const durVal = Math.max(1, Number(durationVal) || 1);
+    let dayMultiplier = 1;
+    if (durationUnit === 'Week(s)') dayMultiplier = 7;
+    else if (durationUnit === 'Month(s)') dayMultiplier = 30;
+
+    const totalDays = freqLower.includes('stat') ? 1 : Math.round(durVal * dayMultiplier);
+    const numDose = Math.max(0.1, Number(qtyDose) || 1);
+
+    const isLiquid = ['Syrup', 'Suspension', 'Solution', 'Elixir'].includes(dosageForm);
+    const isDrops = dosageForm === 'Drops';
+
+    if (isLiquid) {
+      const totalVolumeMl = Math.round(numDose * timesPerDay * totalDays);
+      const bSize = Math.max(1, Number(syrupBottleSize) || 100);
+      const bottlesNeeded = Math.max(1, Math.ceil(totalVolumeMl / bSize));
+      return {
+        type: 'liquid',
+        totalVolumeMl,
+        bottleSize: bSize,
+        bottlesNeeded,
+        dispenseQuantity: bottlesNeeded,
+        dispenseUnit: 'Bottles',
+        dispenseText: `${totalVolumeMl} ml (${bottlesNeeded} x ${bSize}ml Bottle${bottlesNeeded > 1 ? 's' : ''})`,
+        instructionDetail: `Total volume: ${totalVolumeMl}ml. Dispense ${bottlesNeeded} bottle(s) of ${bSize}ml to patient.`,
+        timesPerDay,
+        totalDays,
+      };
+    } else if (isDrops) {
+      const totalDrops = Math.round(numDose * timesPerDay * totalDays);
+      const bSize = Math.max(1, Number(syrupBottleSize) || 15);
+      const bottlesNeeded = Math.max(1, Math.ceil(totalDrops / (bSize * 20)));
+      return {
+        type: 'drops',
+        totalDrops,
+        bottleSize: bSize,
+        bottlesNeeded,
+        dispenseQuantity: bottlesNeeded,
+        dispenseUnit: 'Bottles',
+        dispenseText: `${bottlesNeeded} x ${bSize}ml Bottle${bottlesNeeded > 1 ? 's' : ''} (${totalDrops} drops)`,
+        instructionDetail: `Total drops: ${totalDrops}. Dispense ${bottlesNeeded} bottle(s)`,
+        timesPerDay,
+        totalDays,
+      };
+    } else {
+      // Solid forms: Tablets, Caplets, Capsules, Suppositories, Sachets
+      const totalPieces = Math.ceil(numDose * timesPerDay * totalDays);
+      const pieceLabel =
+        dosageForm === 'Capsule'
+          ? 'Capsules'
+          : dosageForm === 'Caplet'
+          ? 'Caplets'
+          : dosageForm === 'Suppository'
+          ? 'Suppositories'
+          : dosageForm === 'Sachet'
+          ? 'Sachets'
+          : 'Tablets';
+      return {
+        type: 'pieces',
+        totalPieces,
+        dispenseQuantity: totalPieces,
+        dispenseUnit: 'Pieces',
+        dispenseText: `${totalPieces} ${pieceLabel} (Pieces)`,
+        instructionDetail: `Dispense ${totalPieces} pieces (${pieceLabel}) to patient.`,
+        timesPerDay,
+        totalDays,
+      };
+    }
+  };
+
   const handleAddPrescription = () => {
     if (!drugName.trim()) {
       showToast('Please select or enter a medication name', 'warning');
       return;
     }
 
-    // Match if selectedMedTariff or match by name in coveredMedications
+    // Match if selectedMedTariff or match by name in active med list or general list
     const matchedTariff =
       selectedMedTariff ||
-      coveredMedications.find(
+      (tariffMode === 'general' ? generalMedications : coveredMedications).find(
+        (m) => m.product_name?.toLowerCase() === drugName.trim().toLowerCase()
+      ) ||
+      generalMedications.find(
         (m) => m.product_name?.toLowerCase() === drugName.trim().toLowerCase()
       );
+
+    const isPayFromPurse = Boolean(
+      selectedMedTariff?.is_pay_from_purse ||
+      tariffMode === 'general' ||
+      matchedTariff?.is_general ||
+      (!matchedTariff?.sponsor_id && !matchedTariff?.plan_id)
+    );
+
+    const calc = calculateDispense();
+    const durationText = `${durationVal} ${durationUnit}`;
+    const cleanDose = `${qtyDose} ${doseUnit}${strength ? ` (${strength})` : ''}`;
 
     setPrescriptions([
       ...prescriptions,
       {
         id: Date.now(),
         drug: drugName.trim(),
-        dosage: dosage.trim() || 'Standard',
+        dosage_form: dosageForm,
+        route: medRoute || 'Oral',
+        strength: strength.trim(),
+        dose_qty: qtyDose,
+        dose_unit: doseUnit,
+        dosage: cleanDose,
         frequency,
-        duration,
+        duration: durationText,
+        duration_val: durationVal,
+        duration_unit: durationUnit,
+        start_date: startDate,
+        comment: medComment.trim(),
+        dispense_type: calc.type,
+        dispense_unit: calc.dispenseUnit,
+        dispense_quantity: calc.dispenseQuantity,
+        dispense_detail: calc.dispenseText,
+        dispense_summary: calc.instructionDetail,
         tariff_rate: matchedTariff ? matchedTariff.rate : null,
-        plan_name: matchedTariff ? matchedTariff.plan_name : null,
-        sponsor_name: matchedTariff ? matchedTariff.sponsor_name : null,
+        plan_name: isPayFromPurse ? 'General Tariff' : (matchedTariff ? matchedTariff.plan_name : null),
+        sponsor_name: isPayFromPurse ? 'Self-Pay' : (matchedTariff ? matchedTariff.sponsor_name : null),
         sku: matchedTariff ? (matchedTariff.sku || matchedTariff.product_id) : null,
-        is_covered: Boolean(matchedTariff),
+        is_covered: !isPayFromPurse && Boolean(matchedTariff),
+        is_pay_from_purse: isPayFromPurse,
+        payment_mode: isPayFromPurse ? 'pay_from_purse' : 'covered',
+        payment_label: isPayFromPurse ? 'Pay from your purse' : 'Covered Plan',
       },
     ]);
     setDrugName('');
-    setDosage('');
     setSelectedMedTariff(null);
+    setMedComment('');
+    setIsBottleSizeManual(false);
+    setMedRoute(DOSAGE_FORM_ROUTES_MAP[dosageForm]?.defaultRoute || 'Oral');
+    showToast(`Added ${drugName.trim()} to prescription (${calc.dispenseText})`, 'success');
   };
 
   const handleRemovePrescription = (id) => {
@@ -857,10 +1381,14 @@ export default function DoctorConsultationModal({
 
   // 1. Standalone Laboratory Order handlers
   const handleAddLabOrder = (testItem = null) => {
+    const activeList = labTariffMode === 'general' ? generalLabTariffs : coveredLabTariffs;
     const matchedTariff =
       testItem ||
       selectedLabTariff ||
-      coveredLabTariffs.find(
+      activeList.find(
+        (l) => l.item?.toLowerCase() === (testItem?.item || labTestName || investigationName).trim().toLowerCase()
+      ) ||
+      generalLabTariffs.find(
         (l) => l.item?.toLowerCase() === (testItem?.item || labTestName || investigationName).trim().toLowerCase()
       );
 
@@ -879,14 +1407,25 @@ export default function DoctorConsultationModal({
       return;
     }
 
+    const isPayFromPurse = Boolean(
+      selectedLabTariff?.is_pay_from_purse ||
+      labTariffMode === 'general' ||
+      matchedTariff?.is_general ||
+      (!matchedTariff?.sponsor_id && !matchedTariff?.plan_id && matchedTariff)
+    );
+
     const newOrder = {
       id: Date.now(),
       test: testName,
       item_id: matchedTariff ? matchedTariff.item_id : null,
       tariff_rate: matchedTariff ? matchedTariff.rate : null,
-      plan_name: matchedTariff ? matchedTariff.plan_name : null,
-      sponsor_name: matchedTariff ? matchedTariff.sponsor_name : null,
-      is_covered: Boolean(matchedTariff),
+      plan_name: isPayFromPurse ? 'General Tariff' : (matchedTariff ? matchedTariff.plan_name : null),
+      sponsor_name: isPayFromPurse ? 'Self-Pay' : (matchedTariff ? matchedTariff.sponsor_name : null),
+      is_covered: !isPayFromPurse && Boolean(matchedTariff),
+      is_pay_from_purse: isPayFromPurse,
+      payment_mode: isPayFromPurse ? 'pay_from_purse' : 'covered',
+      payment_label: isPayFromPurse ? 'Pay from your purse' : (matchedTariff?.plan_name || 'Covered Plan'),
+      comment: isPayFromPurse ? '[Pay from your purse]' : '',
     };
 
     setLabOrders((prev) => [...prev, newOrder]);
@@ -1041,7 +1580,10 @@ export default function DoctorConsultationModal({
                 const planTag = p.is_covered
                   ? ` [Covered: ₦${Number(p.tariff_rate).toLocaleString()} under ${p.plan_name || 'HMO Plan'}]`
                   : ' [Out-of-Pocket / Non-Tariff]';
-                return `${i + 1}. ${p.drug} (${p.dosage}, ${p.frequency}, ${p.duration}${planTag})`;
+                const disp = p.dispense_detail ? ` - Dispense: ${p.dispense_detail}` : '';
+                const cmt = p.comment ? ` (Note: ${p.comment})` : '';
+                const routeTag = p.route ? ` via ${p.route}` : '';
+                return `${i + 1}. ${p.drug} [${p.dosage_form || 'Tablet'}${p.strength ? ` ${p.strength}` : ''}${routeTag}] - ${p.dosage}, ${p.frequency}, ${p.duration}${cmt}${disp}${planTag}`;
               })
               .join('\n')}`
           : '',
@@ -1092,6 +1634,57 @@ export default function DoctorConsultationModal({
         comments_on_diagnosis: combinedComments,
       });
 
+      // Also persist structured prescriptions to database so Pharmacy Queue immediately has the exact pieces/bottles!
+      if (prescriptions.length > 0) {
+        try {
+          await api.bulkSavePrescriptions({
+            patient_id: patientId,
+            prescriptions: prescriptions.map((p) => ({
+              drug: p.drug,
+              dosage_form: p.dosage_form,
+              route: p.route || 'Oral',
+              strength: p.strength,
+              dose_qty: p.dose_qty,
+              dose_unit: p.dose_unit,
+              frequency: p.frequency,
+              duration: p.duration_val || p.duration,
+              duration_unit: p.duration_unit,
+              dispense_unit: p.dispense_unit,
+              dispense_quantity: p.dispense_quantity,
+              dispense_detail: p.dispense_detail,
+              comment: p.comment,
+              start_date: p.start_date,
+              instruction: `${p.dose_qty} ${p.dose_unit} via ${p.route || 'Oral'}, ${p.frequency} for ${p.duration}${p.comment ? ` - ${p.comment}` : ''}`,
+            })),
+          });
+        } catch (rxErr) {
+          console.warn('Prescriptions saved in consultation notes, error syncing to pharmacy queue:', rxErr);
+        }
+      }
+
+      // Route all prescribed drugs, lab tests, radiology scans & other clinical services to Billings for payment!
+      const hasBillableItems =
+        prescriptions.length > 0 ||
+        labOrders.length > 0 ||
+        radiologyOrders.length > 0 ||
+        otherServiceOrders.length > 0;
+
+      let billResult = null;
+      if (hasBillableItems) {
+        try {
+          billResult = await api.saveConsultationOrders({
+            patient_id: patientId,
+            prescriptions,
+            lab_orders: labOrders,
+            radiology_orders: radiologyOrders,
+            other_service_orders: otherServiceOrders,
+          });
+          console.log('Consultation orders routed to Encounters Billing:', billResult);
+        } catch (billErr) {
+          console.error('Error routing consultation orders to billing:', billErr);
+        }
+      }
+
       // If completing, also complete the appointment if appointment ID exists
       if (isCompleting && appointment?.id) {
         try {
@@ -1099,12 +1692,16 @@ export default function DoctorConsultationModal({
         } catch (_) {}
       }
 
+      const billMsg = billResult && billResult.total_items
+        ? ` (${billResult.total_items} clinical item(s) routed to Billing Queue for cashier)`
+        : '';
+
       showToast(
         isCompleting
-          ? `Doctor Consultation for ${patientName} completed and documented successfully!`
-          : `Consultation clinical notes saved successfully!`,
+          ? `Doctor Consultation for ${patientName} completed successfully!${billMsg}`
+          : `Consultation clinical notes saved successfully!${billMsg}`,
         'success',
-        isCompleting ? 'Consultation Completed' : 'Encounter Saved'
+        isCompleting ? 'Consultation Completed & Routed to Billing' : 'Encounter Saved'
       );
 
       if (onConsultationFinished) {
@@ -1125,9 +1722,8 @@ export default function DoctorConsultationModal({
   if (!isOpen || !patient) return null;
 
   const patientName =
-    patient.full_name ||
+    (patient.surname ? `${patient.surname} ${patient.first_name || ''} ${patient.other_name || ''}`.trim() : null) ||
     patient.patient_name ||
-    `${patient.surname || ''} ${patient.first_name || ''}`.trim() ||
     'Patient';
   const hospitalNumber = patient.hospital_number || 'N/A';
 
@@ -2843,7 +3439,43 @@ export default function DoctorConsultationModal({
                   </div>
                   <div className="card-body p-3">
                     {/* Patient Sponsor & Plan Coverage Banner */}
-                    {currentSponsorName || currentPlanName ? (
+                    {isPrivatePatient ? (
+                      <div
+                        className="alert alert-secondary py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
+                        style={{
+                          borderRadius: '8px',
+                          borderLeft: '4px solid #10b981',
+                          backgroundColor: '#ecfdf5',
+                          borderColor: '#a7f3d0',
+                        }}
+                      >
+                        <div className="d-flex align-items-center">
+                          <div className="mr-3 text-success" style={{ fontSize: '1.4rem' }}>
+                            <i className="fas fa-user-check"></i>
+                          </div>
+                          <div>
+                            <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
+                              <span>Private Patient &bull; General Pricing:</span>
+                              <span className="text-success font-weight-bold">{currentSponsorName || 'Private / Cash'}</span>
+                              {currentPlanName && (
+                                <span className="badge badge-success px-2 py-0.5 font-weight-bold">
+                                  {currentPlanName}
+                                </span>
+                              )}
+                              <span className="badge badge-light border text-success font-weight-bold ml-1">
+                                <i className="fas fa-coins mr-1"></i> Self-Pay (Cash / Purse)
+                              </span>
+                            </div>
+                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                              Private sponsor patients maintain the standard General Price. No HMO approval required; billed directly to patient.
+                            </div>
+                          </div>
+                        </div>
+                        <span className="badge badge-success px-2.5 py-1.5 font-weight-bold">
+                          <i className="fas fa-tag mr-1"></i> General Price Active ({generalMedications.length})
+                        </span>
+                      </div>
+                    ) : (currentSponsorName || currentPlanName) ? (
                       <div
                         className="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
                         style={{
@@ -2859,26 +3491,29 @@ export default function DoctorConsultationModal({
                           </div>
                           <div>
                             <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
-                              <span>Active Coverage Formulary:</span>
+                              <span>HMO Sponsor Coverage (Claims):</span>
                               <span className="text-primary font-weight-bold">{currentSponsorName || 'HMO Sponsor'}</span>
                               {currentPlanName && (
                                 <span className="badge badge-primary px-2 py-1 font-weight-bold">
                                   {currentPlanName}
                                 </span>
                               )}
+                              <span className="badge badge-light border text-primary font-weight-bold ml-1">
+                                <i className="fas fa-file-medical mr-1"></i> Requires HMO Claim / Approval
+                              </span>
                             </div>
                             <div className="text-muted" style={{ fontSize: '0.75rem' }}>
                               {loadingCoveredMeds ? (
-                                <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading covered formulary medications...</span>
+                                <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading HMO formulary medications...</span>
                               ) : coveredMedications.length > 0 ? (
                                 <span>
                                   <i className="fas fa-check-circle text-success mr-1"></i>
-                                  <strong>{coveredMedications.length}</strong> medication{coveredMedications.length > 1 ? 's' : ''} loaded for this patient's plan tariff
+                                  <strong>{coveredMedications.length}</strong> covered medication{coveredMedications.length > 1 ? 's' : ''} under HMO plan. If a drug is not covered, switch to <strong>General Tariff</strong> and patient will <strong>pay from purse</strong>.
                                 </span>
                               ) : (
                                 <span className="text-warning font-weight-bold">
                                   <i className="fas fa-info-circle mr-1"></i>
-                                  No medication price tariffs added for {currentPlanName || currentSponsorName} yet. Add tariffs in Billing &gt; Manage Tariff Plans.
+                                  No medication price tariffs added for {currentPlanName || currentSponsorName} yet. Switch to General Tariff to prescribe.
                                 </span>
                               )}
                             </div>
@@ -2894,48 +3529,86 @@ export default function DoctorConsultationModal({
                       <div className="alert alert-light border py-2 px-3 mb-3 d-flex align-items-center justify-content-between small text-muted">
                         <div>
                           <i className="fas fa-user mr-1 text-secondary"></i>
-                          <strong>Private / Cash Patient:</strong> Standard pharmacy tariffs &amp; inventory apply.
+                          <strong>Private / Cash Patient:</strong> General prices apply. Billed as self-pay cash.
                         </div>
-                        <span className="badge badge-secondary">Private / Cash</span>
+                        <span className="badge badge-secondary">General Price</span>
                       </div>
                     )}
 
-                    {/* Add Medication Row */}
-                    <div className="p-3 bg-light rounded border mb-3">
-                      <div className="font-weight-bold small text-gray-800 mb-2 d-flex justify-content-between align-items-center">
-                        <span>
-                          <i className="fas fa-plus-circle text-success mr-1"></i> Add Medication to Prescription:
+                    {/* Professional Prescription Entry Form (Standard EMR) */}
+                    <div className="p-3 bg-white rounded border mb-3 shadow-sm" style={{ border: '1px solid #cbd5e1' }}>
+                      <div className="font-weight-bold small text-gray-800 mb-2.5 d-flex justify-content-between align-items-center border-bottom pb-2">
+                        <span className="d-flex align-items-center">
+                          <i className="fas fa-pills text-primary mr-2" style={{ fontSize: '1.1rem' }}></i>
+                          <span style={{ fontSize: '0.92rem' }}>Medication Prescription & Dispensing Form</span>
                         </span>
-                        {currentPlanName && (
-                          <span className="small text-muted">
-                            Filtering for: <strong className="text-primary">{currentPlanName}</strong>
-                          </span>
-                        )}
-                      </div>
-                      <div className="row no-gutters mb-2">
-                        {/* Drug Name with Autocomplete dropdown matching Sponsor & Plan */}
-                        <div className="col-md-6 pr-md-1 mb-2 mb-md-0 position-relative" ref={drugDropdownRef}>
-                          <div className="input-group input-group-sm">
-                            <div className="input-group-prepend">
-                              <span className="input-group-text bg-white">
-                                <i className="fas fa-pills text-primary"></i>
-                              </span>
+                        <div className="d-flex align-items-center" style={{ gap: '8px' }}>
+                          {isHmoPatient ? (
+                            <div className="btn-group btn-group-sm p-0.5 bg-light rounded border" role="group">
+                              <button
+                                type="button"
+                                className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
+                                  tariffMode === 'covered' ? 'btn-primary shadow-xs' : 'btn-light text-secondary'
+                                }`}
+                                style={{ borderRadius: '5px', fontSize: '0.78rem' }}
+                                onClick={() => {
+                                  setTariffMode('covered');
+                                  setSelectedMedTariff(null);
+                                }}
+                                title="Search drugs covered by patient HMO plan (Requires HMO Claim/Approval)"
+                              >
+                                <i className="fas fa-shield-alt mr-1"></i> HMO Formulary ({coveredMedications.length})
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
+                                  tariffMode === 'general' ? 'btn-warning text-dark shadow-xs' : 'btn-light text-secondary'
+                                }`}
+                                style={{ borderRadius: '5px', fontSize: '0.78rem' }}
+                                onClick={() => {
+                                  setTariffMode('general');
+                                  setSelectedMedTariff(null);
+                                }}
+                                title="HMO doesn't cover drug? Switch to General Tariff: drug will carry label 'Pay from your purse'"
+                              >
+                                <i className="fas fa-wallet mr-1"></i> Not Covered? Switch to General Tariff &bull; Pay from your purse ({generalMedications.length})
+                              </button>
                             </div>
+                          ) : (
+                            <span className="badge badge-success px-2.5 py-1.5 font-weight-bold shadow-xs">
+                              <i className="fas fa-wallet mr-1"></i> Private Patient &bull; General Price ({generalMedications.length || coveredMedications.length})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Header Labels matching standard EMR */}
+                      <div className="row no-gutters mb-1 font-weight-bold text-gray-700" style={{ fontSize: '0.78rem' }}>
+                        <div className="col-md-3 pr-1">Drug</div>
+                        <div className="col-md-2 px-1">Dosage Form</div>
+                        <div className="col-md-2 px-1">Strength</div>
+                        <div className="col-md-1 px-1">Unit</div>
+                        <div className="col-md-1 px-1">Qty/Dose</div>
+                        <div className="col-md-2 px-1">How Often</div>
+                        <div className="col-md-1 pl-1 text-center">Action</div>
+                      </div>
+
+                      {/* Primary Controls Row */}
+                      <div className="row no-gutters mb-2">
+                        {/* 1. Drug Search / Autocomplete */}
+                        <div className="col-md-3 pr-1 position-relative" ref={drugDropdownRef}>
+                          <div className="input-group input-group-sm">
                             <input
                               type="text"
-                              className="form-control form-control-sm"
-                              placeholder={
-                                currentPlanName
-                                  ? `Type or select drug for ${currentPlanName}...`
-                                  : 'Drug name (e.g. Tab Coartem, Amoxicillin)...'
-                              }
+                              className="form-control form-control-sm font-weight-bold text-dark"
+                              placeholder={tariffMode === 'general' ? "Search general price drugs..." : "Type or select drug..."}
                               value={drugName}
                               onFocus={() => setShowDrugDropdown(true)}
                               onChange={(e) => handleDrugInputChange(e.target.value)}
                               onKeyDown={handleDrugKeyDown}
                               autoComplete="off"
                             />
-                            {drugName && (
+                            {drugName ? (
                               <div className="input-group-append">
                                 <button
                                   type="button"
@@ -2948,6 +3621,16 @@ export default function DoctorConsultationModal({
                                   title="Clear"
                                 >
                                   <i className="fas fa-times"></i>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="input-group-append">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-secondary"
+                                  onClick={() => setShowDrugDropdown(!showDrugDropdown)}
+                                >
+                                  <i className="fas fa-chevron-down fa-xs"></i>
                                 </button>
                               </div>
                             )}
@@ -2970,16 +3653,12 @@ export default function DoctorConsultationModal({
                             >
                               <div className="p-2 bg-light border-bottom d-flex justify-content-between align-items-center">
                                 <span className="small font-weight-bold text-dark">
-                                  {currentPlanName ? (
-                                    <>
-                                      <i className="fas fa-shield-alt text-primary mr-1"></i>
-                                      Formulary for {currentPlanName}:
-                                    </>
+                                  {tariffMode === 'general' ? (
+                                    <span className="text-warning font-weight-bold">
+                                      <i className="fas fa-wallet mr-1"></i> General Tariff (Pay from your purse)
+                                    </span>
                                   ) : (
-                                    <>
-                                      <i className="fas fa-pills text-primary mr-1"></i>
-                                      Medication Tariffs:
-                                    </>
+                                    <span>Formulary: {currentPlanName || 'Medication Tariffs'}</span>
                                   )}
                                 </span>
                                 <span className="badge badge-secondary small">
@@ -2992,51 +3671,102 @@ export default function DoctorConsultationModal({
                                   <i className="fas fa-spinner fa-spin mr-1"></i> Loading medications...
                                 </div>
                               ) : filteredCoveredMeds.length > 0 ? (
-                                filteredCoveredMeds.map((med, idx) => (
-                                  <button
-                                    key={med.id || idx}
-                                    type="button"
-                                    className={`dropdown-item py-2 px-3 border-bottom text-wrap d-flex justify-content-between align-items-center ${
-                                      selectedDrugIndex === idx ? 'bg-primary text-white' : ''
-                                    }`}
-                                    style={{ cursor: 'pointer' }}
-                                    onClick={() => handleSelectCoveredDrug(med)}
-                                  >
-                                    <div>
-                                      <div className={`font-weight-bold ${selectedDrugIndex === idx ? 'text-white' : 'text-dark'}`}>
-                                        {med.product_name}
+                                <>
+                                  {filteredCoveredMeds.map((med, idx) => (
+                                    <button
+                                      key={med.id || idx}
+                                      type="button"
+                                      className={`dropdown-item py-2 px-3 border-bottom text-wrap d-flex justify-content-between align-items-center ${
+                                        selectedDrugIndex === idx ? 'bg-primary text-white' : ''
+                                      }`}
+                                      style={{ cursor: 'pointer' }}
+                                      onClick={() => handleSelectCoveredDrug(med)}
+                                    >
+                                      <div>
+                                        <div className={`font-weight-bold ${selectedDrugIndex === idx ? 'text-white' : 'text-dark'}`}>
+                                          {med.product_name}
+                                        </div>
+                                        <div className={`small ${selectedDrugIndex === idx ? 'text-white-50' : 'text-muted'}`}>
+                                          {(med.sku || med.product_id) && <span className="mr-2">SKU: {med.sku || med.product_id}</span>}
+                                          {med.stock !== undefined && (
+                                            <span className="mr-2 font-weight-bold">Stock: {med.stock}</span>
+                                          )}
+                                          {med.is_general || tariffMode === 'general' ? (
+                                            <span className="badge badge-warning text-dark font-weight-bold mr-1">
+                                              Pay from your purse
+                                            </span>
+                                          ) : med.plan_name ? (
+                                            <span className={`badge ${selectedDrugIndex === idx ? 'badge-light text-primary' : 'badge-info'} mr-1`}>
+                                              {med.plan_name}
+                                            </span>
+                                          ) : null}
+                                        </div>
                                       </div>
-                                      <div className={`small ${selectedDrugIndex === idx ? 'text-white-50' : 'text-muted'}`}>
-                                        {(med.sku || med.product_id) && <span className="mr-2">SKU: {med.sku || med.product_id}</span>}
-                                        {med.plan_name && (
-                                          <span className={`badge ${selectedDrugIndex === idx ? 'badge-light text-primary' : 'badge-info'} mr-1`}>
-                                            {med.plan_name}
-                                          </span>
-                                        )}
-                                        {med.sponsor_name && (
-                                          <span className="small">{med.sponsor_name}</span>
-                                        )}
+                                      <div className="text-right ml-2 flex-shrink-0">
+                                        <span className={`badge ${selectedDrugIndex === idx ? 'badge-light text-success font-weight-bold' : 'badge-success'} px-2 py-1`}>
+                                          ₦{Number(med.rate || 0).toLocaleString()}
+                                        </span>
                                       </div>
+                                    </button>
+                                  ))}
+
+                                  {/* Quick Switch Button at bottom of dropdown for HMO patients */}
+                                  {isHmoPatient && (
+                                    <div className="p-2 bg-light border-top text-center">
+                                      <button
+                                        type="button"
+                                        className="btn btn-link btn-sm p-0 font-weight-bold"
+                                        style={{ fontSize: '0.78rem', color: tariffMode === 'covered' ? '#b45309' : '#2563eb' }}
+                                        onClick={() => {
+                                          setTariffMode(tariffMode === 'covered' ? 'general' : 'covered');
+                                          setShowDrugDropdown(true);
+                                        }}
+                                      >
+                                        {tariffMode === 'covered' ? (
+                                          <>
+                                            <i className="fas fa-exchange-alt mr-1"></i> Drug not covered? Switch to <strong>General Tariff (Pay from your purse)</strong>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <i className="fas fa-exchange-alt mr-1"></i> Switch back to <strong>HMO Formulary ({currentPlanName || currentSponsorName})</strong>
+                                          </>
+                                        )}
+                                      </button>
                                     </div>
-                                    <div className="text-right ml-2 flex-shrink-0">
-                                      <span className={`badge ${selectedDrugIndex === idx ? 'badge-light text-success font-weight-bold' : 'badge-success'} px-2 py-1`}>
-                                        ₦{Number(med.rate || 0).toLocaleString()}
-                                      </span>
-                                    </div>
-                                  </button>
-                                ))
+                                  )}
+                                </>
                               ) : (
                                 <div className="p-3 text-center">
                                   <div className="text-muted small mb-2">
-                                    No covered medication found matching "<strong>{drugName}</strong>" for {currentPlanName || 'this patient'}.
+                                    {isHmoPatient && tariffMode === 'covered' ? (
+                                      <>
+                                        "<strong>{drugName}</strong>" is not covered in <strong>{currentPlanName || 'patient HMO plan'}</strong>.
+                                      </>
+                                    ) : (
+                                      <>No medication found matching "<strong>{drugName}</strong>".</>
+                                    )}
                                   </div>
+                                  {isHmoPatient && tariffMode === 'covered' && (
+                                    <div className="mb-2">
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-warning font-weight-bold shadow-xs px-3"
+                                        onClick={() => {
+                                          setTariffMode('general');
+                                          setShowDrugDropdown(true);
+                                        }}
+                                      >
+                                        <i className="fas fa-wallet mr-1"></i> Switch to General Tariff (Pay from your purse)
+                                      </button>
+                                    </div>
+                                  )}
                                   {drugName.trim() && (
                                     <button
                                       type="button"
-                                      className="btn btn-sm btn-outline-primary"
+                                      className="btn btn-sm btn-outline-secondary"
                                       onClick={() => setShowDrugDropdown(false)}
                                     >
-                                      <i className="fas fa-check mr-1"></i> Use "{drugName.trim()}" (Out-of-Pocket / Non-Tariff)
+                                      <i className="fas fa-check mr-1"></i> Use "{drugName.trim()}" (Standard)
                                     </button>
                                   )}
                                 </div>
@@ -3044,100 +3774,522 @@ export default function DoctorConsultationModal({
                             </div>
                           )}
 
-                          {/* Selected Tariff Rate indicator */}
-                          {selectedMedTariff && (
-                            <div className="mt-1 small text-success font-weight-bold d-flex align-items-center">
-                              <i className="fas fa-check-circle mr-1"></i>
-                              Covered Rate: ₦{Number(selectedMedTariff.rate || 0).toLocaleString()} ({selectedMedTariff.plan_name || 'HMO Plan'})
-                            </div>
+                          {/* Stock and Coverage Tags under Drug Name */}
+                          <div className="d-flex align-items-center mt-1 flex-wrap" style={{ gap: '4px', fontSize: '0.74rem' }}>
+                            {selectedMedTariff?.stock !== undefined ? (
+                              <span className={`badge ${selectedMedTariff.stock > 0 ? 'badge-light text-dark border' : 'badge-danger'}`}>
+                                QoH: {Number(selectedMedTariff.stock).toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="badge badge-light border text-muted">QoH: In Stock</span>
+                            )}
+                            {selectedMedTariff?.is_pay_from_purse || tariffMode === 'general' ? (
+                              <span
+                                className="badge px-2 py-1 font-weight-bold shadow-xs"
+                                style={{
+                                  backgroundColor: '#fef3c7',
+                                  color: '#92400e',
+                                  border: '1px solid #fde68a',
+                                }}
+                              >
+                                <i className="fas fa-wallet mr-1"></i> Pay from your purse &bull; ₦{Number(selectedMedTariff?.rate || 0).toLocaleString()}
+                              </span>
+                            ) : selectedMedTariff ? (
+                              <span className="badge badge-info px-1.5 py-0.5">
+                                Covered ({selectedMedTariff.plan_name || 'Primary'}) &bull; ₦{Number(selectedMedTariff.rate || 0).toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="badge badge-secondary px-1.5 py-0.5">Standard Rate</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 2. Dosage Form */}
+                        <div className="col-md-2 px-1">
+                          <select
+                            className="form-control form-control-sm font-weight-bold text-dark"
+                            value={dosageForm}
+                            onChange={(e) => handleDosageFormChange(e.target.value)}
+                          >
+                            <option value="Tablet">Tablet</option>
+                            <option value="Caplet">Caplet</option>
+                            <option value="Syrup">Syrup</option>
+                            <option value="Suspension">Suspension</option>
+                            <option value="Drops">Drops</option>
+                            <option value="Capsule">Capsule</option>
+                            <option value="Injection">Injection</option>
+                            <option value="Suppository">Suppository</option>
+                            <option value="Inhaler">Inhaler</option>
+                            <option value="Ointment">Ointment / Cream</option>
+                            <option value="Sachet">Sachet</option>
+                          </select>
+                        </div>
+
+                        {/* 3. Strength */}
+                        <div className="col-md-2 px-1">
+                          {['Syrup', 'Suspension'].includes(dosageForm) ? (
+                            <select
+                              className="form-control form-control-sm font-weight-bold text-dark"
+                              value={strength}
+                              onChange={(e) => setStrength(e.target.value)}
+                            >
+                              <option value="120mg - 5ml">120mg - 5ml</option>
+                              <option value="250mg - 5ml">250mg - 5ml</option>
+                              <option value="100mg - 5ml">100mg - 5ml</option>
+                              <option value="200mg - 5ml">200mg - 5ml</option>
+                              <option value="5ml">5ml</option>
+                              <option value="10ml">10ml</option>
+                              <option value="15ml">15ml</option>
+                              <option value="50mg - 1ml">50mg - 1ml</option>
+                            </select>
+                          ) : dosageForm === 'Drops' ? (
+                            <select
+                              className="form-control form-control-sm font-weight-bold text-dark"
+                              value={strength}
+                              onChange={(e) => setStrength(e.target.value)}
+                            >
+                              <option value="100mg - 1ml">100mg - 1ml</option>
+                              <option value="50mg - 1ml">50mg - 1ml</option>
+                              <option value="10mg - 1ml">10mg - 1ml</option>
+                              <option value="15ml">15ml</option>
+                            </select>
+                          ) : (
+                            <select
+                              className="form-control form-control-sm font-weight-bold text-dark"
+                              value={strength}
+                              onChange={(e) => setStrength(e.target.value)}
+                            >
+                              <option value="500mg">500mg</option>
+                              <option value="250mg">250mg</option>
+                              <option value="100mg">100mg</option>
+                              <option value="625mg">625mg</option>
+                              <option value="1g">1g</option>
+                              <option value="200mg">200mg</option>
+                              <option value="50mg">50mg</option>
+                              <option value="20mg">20mg</option>
+                              <option value="10mg">10mg</option>
+                              <option value="5mg">5mg</option>
+                            </select>
                           )}
                         </div>
 
-                        {/* Dosage */}
-                        <div className="col-md-6 pl-md-1">
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            placeholder="Dosage (e.g. 1 tab, 500mg, 10ml)..."
-                            value={dosage}
-                            onChange={(e) => setDosage(e.target.value)}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="row no-gutters mb-2">
-                        <div className="col-md-6 pr-md-1 mb-2 mb-md-0">
+                        {/* 4. Unit */}
+                        <div className="col-md-1 px-1">
                           <select
                             className="form-control form-control-sm"
+                            value={doseUnit}
+                            onChange={(e) => setDoseUnit(e.target.value)}
+                          >
+                            {['Syrup', 'Suspension'].includes(dosageForm) ? (
+                              <>
+                                <option value="ml">ml</option>
+                                <option value="mg">mg</option>
+                                <option value="tsp (5ml)">tsp (5ml)</option>
+                                <option value="tbsp (15ml)">tbsp (15ml)</option>
+                              </>
+                            ) : dosageForm === 'Drops' ? (
+                              <>
+                                <option value="drops">drops</option>
+                                <option value="ml">ml</option>
+                              </>
+                            ) : (
+                              <>
+                                <option value="tab">tab</option>
+                                <option value="mg">mg</option>
+                                <option value="caplet">caplet</option>
+                                <option value="cap">cap</option>
+                                <option value="sachet">sachet</option>
+                                <option value="puffs">puffs</option>
+                                <option value="supp">supp</option>
+                                <option value="vial">vial</option>
+                                <option value="g">g</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+
+                        {/* 5. Qty/Dose */}
+                        <div className="col-md-1 px-1">
+                          <input
+                            type="number"
+                            min="0.5"
+                            step="0.5"
+                            className="form-control form-control-sm font-weight-bold text-center"
+                            value={qtyDose}
+                            onChange={(e) => setQtyDose(e.target.value)}
+                          />
+                        </div>
+
+                        {/* 6. How Often (Frequency) */}
+                        <div className="col-md-2 px-1">
+                          <select
+                            className="form-control form-control-sm font-weight-bold text-dark"
                             value={frequency}
                             onChange={(e) => setFrequency(e.target.value)}
                           >
-                            <option value="Once daily (od)">Once daily (od)</option>
-                            <option value="Twice daily (bd)">Twice daily (bd)</option>
-                            <option value="Three times daily (tds)">Three times daily (tds)</option>
-                            <option value="Four times daily (qid)">Four times daily (qid)</option>
+                            <option value="Once daily (od)">Once Daily (od)</option>
+                            <option value="Hourly">Hourly</option>
+                            <option value="Twice daily (bd)">Bd (Twice daily)</option>
+                            <option value="Three times daily (tds)">Tds (Three times daily)</option>
+                            <option value="Four times daily (qid)">Qds (Four times daily)</option>
+                            <option value="12 hourly">12 hourly</option>
+                            <option value="8 hourly">8 hourly</option>
+                            <option value="6 hourly">6 hourly</option>
+                            <option value="Every 4 hours (q4h)">Every 4 hours (q4h)</option>
+                            <option value="At bedtime / Night (nocte)">At Night (nocte)</option>
+                            <option value="In the morning (mane)">Morning (mane)</option>
+                            <option value="Every other day (alt die)">Every other day (alt die)</option>
+                            <option value="Once weekly">Once weekly</option>
                             <option value="As needed (prn)">As needed (prn)</option>
-                            <option value="Stat / Single dose">Stat / Single dose</option>
+                            <option value="Stat / Single dose">Stat (Single dose)</option>
                           </select>
                         </div>
-                        <div className="col-md-4 px-md-1 mb-2 mb-md-0">
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            placeholder="Duration (e.g. 3 days, 5 days, 1 month)..."
-                            value={duration}
-                            onChange={(e) => setDuration(e.target.value)}
-                          />
-                        </div>
-                        <div className="col-md-2 pl-md-1">
+
+                        {/* 7. Action Button */}
+                        <div className="col-md-1 pl-1 text-center">
                           <button
                             type="button"
-                            className="btn btn-sm btn-success btn-block"
+                            className="btn btn-sm btn-primary btn-block font-weight-bold"
                             onClick={handleAddPrescription}
+                            title="Add Medication to Prescription"
                           >
                             <i className="fas fa-plus"></i> Add
                           </button>
                         </div>
                       </div>
+
+                      {/* Secondary Sub-row aligned directly with fields (Route under Dosage Form, Duration under Strength, Start Date, Comment) */}
+                      <div className="row no-gutters mb-2 align-items-center" style={{ fontSize: '0.8rem' }}>
+                        <div className="col-md-3 pr-1">
+                          {/* Blank spacer aligning under Drug */}
+                        </div>
+
+                        {/* Route aligned directly under Dosage Form */}
+                        <div className="col-md-2 px-1">
+                          <select
+                            className="form-control form-control-sm font-weight-bold text-dark border-primary"
+                            value={medRoute}
+                            onChange={(e) => setMedRoute(e.target.value)}
+                            title="Route of Administration (mapped with Dosage Form)"
+                          >
+                            <optgroup label={`Mapped for ${dosageForm}`}>
+                              {(DOSAGE_FORM_ROUTES_MAP[dosageForm]?.routes || ['Oral']).map((r) => (
+                                <option key={r} value={r}>
+                                  {r}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Other Routes">
+                              {ALL_COMMON_ROUTES.filter(
+                                (r) => !(DOSAGE_FORM_ROUTES_MAP[dosageForm]?.routes || []).includes(r)
+                              ).map((r) => (
+                                <option key={r} value={r}>
+                                  {r}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+                        </div>
+
+                        {/* Duration aligned under Strength */}
+                        <div className="col-md-2 px-1">
+                          <div className="input-group input-group-sm">
+                            <input
+                              type="number"
+                              min="1"
+                              className="form-control form-control-sm font-weight-bold text-center"
+                              placeholder="Duration"
+                              value={durationVal}
+                              onChange={(e) => setDurationVal(e.target.value)}
+                              title="Duration Number"
+                              style={{ width: '45%' }}
+                            />
+                            <select
+                              className="form-control form-control-sm font-weight-bold text-dark"
+                              value={durationUnit}
+                              onChange={(e) => setDurationUnit(e.target.value)}
+                              title="Duration Unit"
+                            >
+                              <option value="Day(s)">Day(s)</option>
+                              <option value="Week(s)">Week(s)</option>
+                              <option value="Month(s)">Month(s)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Start Date aligned under Unit + Qty/Dose */}
+                        <div className="col-md-2 px-1">
+                          <div className="input-group input-group-sm">
+                            <div className="input-group-prepend">
+                              <span className="input-group-text bg-light text-muted px-1.5" style={{ fontSize: '0.75rem' }}>
+                                <i className="far fa-calendar-alt"></i>
+                              </span>
+                            </div>
+                            <input
+                              type="date"
+                              className="form-control form-control-sm px-1"
+                              value={startDate}
+                              onChange={(e) => setStartDate(e.target.value)}
+                              title="Start Date"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Comment aligned under How Often */}
+                        <div className="col-md-2 px-1">
+                          <div className="input-group input-group-sm">
+                            <div className="input-group-prepend">
+                              <span className="input-group-text bg-light text-muted px-1.5" style={{ fontSize: '0.75rem' }}>
+                                <i className="fas fa-comment-medical"></i>
+                              </span>
+                            </div>
+                            <input
+                              type="text"
+                              className="form-control form-control-sm"
+                              placeholder="Comment (e.g. After meals)..."
+                              value={medComment}
+                              onChange={(e) => setMedComment(e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Blank spacer aligning under Action button */}
+                        <div className="col-md-1 pl-1 text-center"></div>
+                      </div>
+
+                      {/* If Syrup or Suspension: Bottle Size Selector (15ml, 30ml, 50ml, 60ml, 100ml, 120ml, 150ml, 200ml) */}
+                      {['Syrup', 'Suspension', 'Drops'].includes(dosageForm) && (() => {
+                        const autoRecSize = getOptimalBottleSize(drugName, dosageForm, qtyDose, frequency, durationVal, durationUnit);
+                        return (
+                          <div className="p-2 mb-2 bg-light rounded border d-flex align-items-center justify-content-between flex-wrap" style={{ fontSize: '0.8rem' }}>
+                            <div className="d-flex align-items-center mb-1 mb-md-0 flex-wrap">
+                              <i className="fas fa-prescription-bottle-alt text-info mr-2"></i>
+                              <strong className="text-dark mr-2">Hospital Bottle Size to Dispense:</strong>
+                              <div className="btn-group btn-group-sm mr-2" role="group">
+                                {STANDARD_HOSPITAL_BOTTLE_SIZES.map((b) => (
+                                  <button
+                                    key={b}
+                                    type="button"
+                                    className={`btn btn-xs ${
+                                      String(syrupBottleSize) === b ? 'btn-primary font-weight-bold shadow-sm' : 'btn-outline-secondary'
+                                    }`}
+                                    style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                                    onClick={() => {
+                                      setSyrupBottleSize(b);
+                                      setIsBottleSizeManual(true);
+                                    }}
+                                    title={`Select ${b}ml bottle size`}
+                                  >
+                                    {b}ml
+                                  </button>
+                                ))}
+                              </div>
+                              {!isBottleSizeManual ? (
+                                <span
+                                  className="badge badge-success-light text-success border border-success mr-2 py-1 px-2"
+                                  style={{ fontSize: '0.72rem', backgroundColor: '#ecfdf5', borderRadius: '4px' }}
+                                  title="Automatically calculated and picked based on prescription regimen and package size"
+                                >
+                                  <i className="fas fa-magic mr-1"></i> Auto-selected
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-outline-info mr-2"
+                                  style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                                  onClick={() => {
+                                    setIsBottleSizeManual(false);
+                                    setSyrupBottleSize(String(autoRecSize));
+                                  }}
+                                  title={`Reset to automatically calculated hospital bottle size (${autoRecSize}ml)`}
+                                >
+                                  <i className="fas fa-sync-alt mr-1"></i> Auto-pick ({autoRecSize}ml)
+                                </button>
+                              )}
+                            </div>
+                            <div className="d-flex align-items-center">
+                              <span className="small text-muted mr-1">Custom:</span>
+                              <input
+                                type="number"
+                                className="form-control form-control-sm font-weight-bold text-center"
+                                style={{ width: '70px', height: '26px' }}
+                                value={syrupBottleSize}
+                                onChange={(e) => {
+                                  setSyrupBottleSize(e.target.value);
+                                  setIsBottleSizeManual(true);
+                                }}
+                                placeholder="ml"
+                              />
+                              <span className="small text-muted ml-1">ml bottle</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Real-time Pharmacy Dispensing Calculation Box */}
+                      {(() => {
+                        const preview = calculateDispense();
+                        return (
+                          <div
+                            className={`p-2.5 rounded border d-flex align-items-center justify-content-between flex-wrap ${
+                              preview.type === 'liquid'
+                                ? 'bg-success-light border-success text-success'
+                                : 'bg-primary-light border-primary text-primary'
+                            }`}
+                            style={{
+                              backgroundColor: preview.type === 'liquid' ? '#ecfdf5' : '#eff6ff',
+                              borderColor: preview.type === 'liquid' ? '#a7f3d0' : '#bfdbfe',
+                            }}
+                          >
+                            <div className="d-flex align-items-center">
+                              <span
+                                className="mr-2 d-inline-flex align-items-center justify-content-center rounded-circle"
+                                style={{
+                                  width: '28px',
+                                  height: '28px',
+                                  backgroundColor: preview.type === 'liquid' ? '#d1fae5' : '#dbeafe',
+                                  color: preview.type === 'liquid' ? '#059669' : '#2563eb',
+                                }}
+                              >
+                                <i className={`fas ${preview.type === 'liquid' ? 'fa-prescription-bottle' : 'fa-calculator'}`}></i>
+                              </span>
+                              <div>
+                                <span className="font-weight-bold text-dark small mr-2">
+                                  {preview.type === 'liquid' ? 'Pharmacy Dispense Calculation (Liquid / Syrup Bottles):' : 'Pharmacy Dispense Calculation (Solid Pieces):'}
+                                </span>
+                                <span className="small text-muted">
+                                  {qtyDose} {doseUnit} × {frequency} ({preview.timesPerDay}x/day) × {durationVal} {durationUnit} ({preview.totalDays} day{preview.totalDays > 1 ? 's' : ''})
+                                  {preview.type === 'liquid' && (
+                                    <> &rarr; <strong>{preview.totalVolumeMl} ml</strong> Total Volume</>
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                            <div>
+                              <span
+                                className={`badge px-3 py-1.5 font-weight-bold shadow-sm ${
+                                  preview.type === 'liquid' ? 'badge-success' : 'badge-primary'
+                                }`}
+                                style={{ fontSize: '0.86rem' }}
+                              >
+                                <i className={`fas ${preview.type === 'liquid' ? 'fa-box-open' : 'fa-pills'} mr-1`}></i>
+                                Pharmacy Dispense: {preview.dispenseText}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Prescriptions List Table */}
                     {prescriptions.length > 0 ? (
-                      <div className="table-responsive">
-                        <table className="table table-sm table-bordered mb-0">
+                      <div className="table-responsive shadow-sm rounded border">
+                        <table className="table table-sm table-bordered table-hover mb-0">
                           <thead className="thead-light">
-                            <tr>
-                              <th>#</th>
-                              <th>Medication</th>
-                              <th>Coverage / Tariff Rate</th>
-                              <th>Dosage</th>
-                              <th>Frequency</th>
-                              <th>Duration</th>
-                              <th style={{ width: '40px' }}></th>
+                            <tr style={{ fontSize: '0.8rem' }}>
+                              <th style={{ width: '30px' }}>#</th>
+                              <th>Medication &amp; Form</th>
+                              <th>Strength / Unit</th>
+                              <th>Clinical Regimen</th>
+                              <th className="bg-light-primary text-primary font-weight-bold">
+                                <i className="fas fa-hand-holding-medical mr-1"></i> Pharmacy Dispense to Patient
+                              </th>
+                              <th>Coverage / Tariff</th>
+                              <th>Special Instructions</th>
+                              <th>Start Date</th>
+                              <th style={{ width: '40px' }} className="text-center">Action</th>
                             </tr>
                           </thead>
                           <tbody>
                             {prescriptions.map((p, idx) => (
-                              <tr key={p.id}>
-                                <td>{idx + 1}</td>
+                              <tr key={p.id} style={{ fontSize: '0.84rem' }}>
+                                <td className="text-center font-weight-bold text-muted">{idx + 1}</td>
                                 <td>
-                                  <span className="font-weight-bold text-primary">{p.drug}</span>
-                                  {p.sku && <span className="small text-muted d-block">SKU: {p.sku}</span>}
+                                  <div className="d-flex align-items-center flex-wrap" style={{ gap: '4px' }}>
+                                    <span className="font-weight-bold text-primary">{p.drug}</span>
+                                    {p.is_pay_from_purse && (
+                                      <span
+                                        className="badge px-2 py-0.5 font-weight-bold shadow-xs"
+                                        style={{
+                                          backgroundColor: '#fef3c7',
+                                          color: '#92400e',
+                                          border: '1px solid #fde68a',
+                                          fontSize: '0.72rem',
+                                        }}
+                                      >
+                                        <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="small text-muted d-flex align-items-center flex-wrap" style={{ gap: '4px' }}>
+                                    <span className="badge badge-light border">{p.dosage_form || 'Tablet'}</span>
+                                    {p.route && (
+                                      <span className="badge badge-light text-primary border font-weight-bold">
+                                        <i className="fas fa-route mr-1"></i>{p.route}
+                                      </span>
+                                    )}
+                                    {p.sku && <span>SKU: {p.sku}</span>}
+                                  </div>
                                 </td>
                                 <td>
-                                  {p.tariff_rate ? (
+                                  <span className="font-weight-bold">{p.strength || '-'}</span>
+                                  <span className="text-muted small d-block">{p.dose_qty} {p.dose_unit} / dose</span>
+                                </td>
+                                <td>
+                                  <div className="font-weight-bold text-dark">{p.frequency}</div>
+                                  <div className="small text-muted">
+                                    {p.duration}{p.route ? ` • via ${p.route}` : ''}
+                                  </div>
+                                </td>
+                                <td className="bg-light-primary">
+                                  <span
+                                    className={`badge px-2.5 py-1.5 font-weight-bold ${
+                                      p.dispense_type === 'liquid' ? 'badge-success' : 'badge-primary'
+                                    }`}
+                                    style={{ fontSize: '0.82rem' }}
+                                  >
+                                    <i className={`fas ${p.dispense_type === 'liquid' ? 'fa-prescription-bottle' : 'fa-pills'} mr-1`}></i>
+                                    {p.dispense_detail || `${p.dispense_quantity || 1} ${p.dispense_unit || 'units'}`}
+                                  </span>
+                                </td>
+                                <td>
+                                  {p.is_pay_from_purse ? (
+                                    <div>
+                                      <span
+                                        className="badge px-2 py-1 font-weight-bold shadow-xs"
+                                        style={{
+                                          backgroundColor: '#fef3c7',
+                                          color: '#92400e',
+                                          border: '1px solid #fde68a',
+                                        }}
+                                      >
+                                        <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                                      </span>
+                                      <div className="font-weight-bold text-dark mt-1" style={{ fontSize: '0.85rem' }}>
+                                        ₦{Number(p.tariff_rate || 0).toLocaleString()}
+                                      </div>
+                                      <div className="text-muted" style={{ fontSize: '0.70rem' }}>Out-of-Pocket / Self-Pay</div>
+                                    </div>
+                                  ) : p.tariff_rate ? (
                                     <span className="badge badge-success px-2 py-1 font-weight-bold">
                                       ₦{Number(p.tariff_rate).toLocaleString()} &bull; {p.plan_name || 'Covered Plan'}
                                     </span>
                                   ) : (
                                     <span className="badge badge-secondary px-2 py-1">
-                                      Out-of-Pocket / Standard
+                                      Standard / Out-of-Pocket
                                     </span>
                                   )}
                                 </td>
-                                <td>{p.dosage}</td>
-                                <td>{p.frequency}</td>
-                                <td>{p.duration}</td>
+                                <td className="small text-muted">
+                                  {p.comment ? (
+                                    <span className="text-dark font-weight-bold">{p.comment}</span>
+                                  ) : (
+                                    <span className="text-muted font-italic">As directed</span>
+                                  )}
+                                </td>
+                                <td className="small font-weight-bold text-muted">
+                                  {p.start_date || 'Today'}
+                                </td>
                                 <td className="text-center">
                                   <button
                                     type="button"
@@ -3154,9 +4306,9 @@ export default function DoctorConsultationModal({
                         </table>
                       </div>
                     ) : (
-                      <div className="text-center py-4 text-muted small">
-                        <i className="fas fa-prescription fa-2x text-gray-300 mb-2 d-block"></i>
-                        No medications added yet for this consultation.
+                      <div className="text-center py-4 text-muted small bg-light rounded border">
+                        <i className="fas fa-prescription-bottle-alt fa-2x text-gray-300 mb-2 d-block"></i>
+                        No medications added yet for this consultation. Use the form above to add prescriptions.
                       </div>
                     )}
                   </div>
@@ -3204,9 +4356,45 @@ export default function DoctorConsultationModal({
 
                   <div className="card-body p-3.5">
                     {/* Patient Sponsor & Plan Coverage Lab Tariffs Banner */}
-                    {currentSponsorName || currentPlanName ? (
+                    {isPrivatePatient ? (
                       <div
-                        className="alert alert-info py-2.5 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
+                        className="alert alert-success py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
+                        style={{
+                          borderRadius: '8px',
+                          borderLeft: '4px solid #10b981',
+                          backgroundColor: '#ecfdf5',
+                          borderColor: '#a7f3d0',
+                        }}
+                      >
+                        <div className="d-flex align-items-center">
+                          <div className="mr-3 text-success" style={{ fontSize: '1.4rem' }}>
+                            <i className="fas fa-flask"></i>
+                          </div>
+                          <div>
+                            <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
+                              <span>Private Patient &bull; General Pricing:</span>
+                              <span className="text-success font-weight-bold">{currentSponsorName || 'Private / Cash'}</span>
+                              {currentPlanName && (
+                                <span className="badge badge-success px-2 py-0.5 font-weight-bold">
+                                  {currentPlanName}
+                                </span>
+                              )}
+                              <span className="badge badge-light border text-success font-weight-bold ml-1">
+                                <i className="fas fa-coins mr-1"></i> Self-Pay (Cash / Purse)
+                              </span>
+                            </div>
+                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                              Private sponsor patients maintain the standard General Price. No HMO approval required; billed directly to patient.
+                            </div>
+                          </div>
+                        </div>
+                        <span className="badge badge-success px-2.5 py-1.5 font-weight-bold">
+                          <i className="fas fa-tag mr-1"></i> General Price Active ({generalLabTariffs.length})
+                        </span>
+                      </div>
+                    ) : (currentSponsorName || currentPlanName) ? (
+                      <div
+                        className="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
                         style={{
                           borderRadius: '8px',
                           borderLeft: '4px solid #0284c7',
@@ -3220,26 +4408,29 @@ export default function DoctorConsultationModal({
                           </div>
                           <div>
                             <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
-                              <span>Active Laboratory Tariff:</span>
+                              <span>HMO Sponsor Coverage (Claims):</span>
                               <span className="text-info font-weight-bold">{currentSponsorName || 'HMO Sponsor'}</span>
                               {currentPlanName && (
-                                <span className="badge badge-info px-2 py-0.5 font-weight-bold">
+                                <span className="badge badge-info px-2 py-1 font-weight-bold">
                                   {currentPlanName}
                                 </span>
                               )}
+                              <span className="badge badge-light border text-info font-weight-bold ml-1">
+                                <i className="fas fa-file-medical mr-1"></i> Requires HMO Claim / Approval
+                              </span>
                             </div>
-                            <div className="text-muted" style={{ fontSize: '0.76rem' }}>
+                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
                               {loadingCoveredLabs ? (
-                                <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading covered laboratory tariffs...</span>
+                                <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading HMO covered lab investigations...</span>
                               ) : coveredLabTariffs.length > 0 ? (
                                 <span>
                                   <i className="fas fa-check-circle text-success mr-1"></i>
-                                  <strong>{coveredLabTariffs.length}</strong> laboratory test{coveredLabTariffs.length > 1 ? 's' : ''} covered under this patient's plan tariff
+                                  <strong>{coveredLabTariffs.length}</strong> covered test{coveredLabTariffs.length > 1 ? 's' : ''} under HMO plan. If a test is not covered, switch to <strong>General Tariff</strong> and patient will <strong>pay from purse</strong>.
                                 </span>
                               ) : (
                                 <span className="text-warning font-weight-bold">
                                   <i className="fas fa-info-circle mr-1"></i>
-                                  No laboratory price tariffs configured for {currentPlanName || currentSponsorName} yet. Add in Billing &gt; Lab Charges.
+                                  No lab price tariffs added for {currentPlanName || currentSponsorName} yet. Switch to General Tariff to requisition.
                                 </span>
                               )}
                             </div>
@@ -3247,7 +4438,7 @@ export default function DoctorConsultationModal({
                         </div>
                         {coveredLabTariffs.length > 0 && (
                           <span className="badge badge-light border text-info font-weight-bold px-2 py-1 small">
-                            <i className="fas fa-microscope mr-1"></i> {coveredLabTariffs.length} Lab Tariffs
+                            <i className="fas fa-vial mr-1"></i> {coveredLabTariffs.length} Plan Tariffs
                           </span>
                         )}
                       </div>
@@ -3255,7 +4446,7 @@ export default function DoctorConsultationModal({
                       <div className="alert alert-light border py-2 px-3 mb-3 d-flex align-items-center justify-content-between small text-muted">
                         <div>
                           <i className="fas fa-user mr-1 text-secondary"></i>
-                          <strong>Private / Cash Patient:</strong> Standard laboratory test tariffs apply.
+                          <strong>Private / Cash Patient:</strong> Standard general laboratory test tariffs apply.
                         </div>
                         <span className="badge badge-secondary">Private / Cash</span>
                       </div>
@@ -3263,15 +4454,49 @@ export default function DoctorConsultationModal({
 
                     {/* Lab Order Requisition Form */}
                     <div className="p-3 bg-light rounded border mb-3" style={{ borderColor: '#e2e8f0' }}>
-                      <div className="font-weight-bold small text-gray-800 mb-2 d-flex justify-content-between align-items-center">
-                        <span>
-                          <i className="fas fa-plus-circle text-info mr-1.5"></i> Requisition Laboratory Test:
-                        </span>
-                        {currentPlanName && (
-                          <span className="small text-muted">
-                            Tariff Filter: <strong className="text-info">{currentPlanName}</strong>
-                          </span>
-                        )}
+                      <div className="d-flex justify-content-between align-items-center flex-wrap mb-2" style={{ gap: '8px' }}>
+                        <div className="font-weight-bold small text-gray-800 d-flex align-items-center">
+                          <i className="fas fa-plus-circle text-info mr-1.5"></i>
+                          <span>Requisition Laboratory Test:</span>
+                        </div>
+                        <div>
+                          {isHmoPatient ? (
+                            <div className="btn-group btn-group-sm p-0.5 bg-light border" style={{ borderRadius: '6px' }}>
+                              <button
+                                type="button"
+                                className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
+                                  labTariffMode === 'covered' ? 'btn-info text-white shadow-xs' : 'btn-light text-secondary'
+                                }`}
+                                style={{ borderRadius: '5px', fontSize: '0.78rem' }}
+                                onClick={() => {
+                                  setLabTariffMode('covered');
+                                  setSelectedLabTariff(null);
+                                }}
+                                title="Search lab tests covered by patient HMO plan (Requires HMO Claim/Approval)"
+                              >
+                                <i className="fas fa-shield-alt mr-1"></i> HMO Covered ({coveredLabTariffs.length})
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
+                                  labTariffMode === 'general' ? 'btn-warning text-dark shadow-xs' : 'btn-light text-secondary'
+                                }`}
+                                style={{ borderRadius: '5px', fontSize: '0.78rem' }}
+                                onClick={() => {
+                                  setLabTariffMode('general');
+                                  setSelectedLabTariff(null);
+                                }}
+                                title="HMO doesn't cover test? Switch to General Tariff: test will carry label 'Pay from your purse'"
+                              >
+                                <i className="fas fa-wallet mr-1"></i> Not Covered? Switch to General Tariff &bull; Pay from your purse ({generalLabTariffs.length})
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="badge badge-success px-2.5 py-1.5 font-weight-bold shadow-xs">
+                              <i className="fas fa-wallet mr-1"></i> Private Patient &bull; General Price ({generalLabTariffs.length || coveredLabTariffs.length})
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="position-relative" ref={labDropdownRef}>
@@ -3285,8 +4510,10 @@ export default function DoctorConsultationModal({
                             type="text"
                             className="form-control"
                             placeholder={
-                              currentPlanName
-                                ? `Search covered lab test for ${currentPlanName} (e.g. FBC, MP, PCV, Urinalysis, Widal, Lipid Profile)...`
+                              labTariffMode === 'general'
+                                ? 'Search general lab test (Pay from your purse)...'
+                                : currentPlanName
+                                ? `Search covered lab test for ${currentPlanName} (e.g. FBC, MP, PCV, Urinalysis, Widal)...`
                                 : 'Search or type laboratory test (e.g. Full Blood Count, Malaria Parasite, Urinalysis)...'
                             }
                             value={labTestName}
@@ -3339,7 +4566,12 @@ export default function DoctorConsultationModal({
                           >
                             <div className="p-2 bg-light border-bottom d-flex justify-content-between align-items-center">
                               <span className="small font-weight-bold text-dark">
-                                {currentPlanName ? (
+                                {labTariffMode === 'general' ? (
+                                  <>
+                                    <i className="fas fa-wallet text-warning mr-1"></i>
+                                    General Tariff (Pay from your purse):
+                                  </>
+                                ) : currentPlanName ? (
                                   <>
                                     <i className="fas fa-shield-alt text-info mr-1"></i>
                                     Covered Lab Tariffs for {currentPlanName}:
@@ -3374,6 +4606,11 @@ export default function DoctorConsultationModal({
                                       <span className={`font-weight-bold ${selectedLabIndex === idx ? 'text-white' : 'text-dark'}`}>
                                         {lab.item}
                                       </span>
+                                      {(labTariffMode === 'general' || lab.is_general || (!lab.sponsor_id && !lab.plan_id)) && (
+                                        <span className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs" style={{ fontSize: '0.70rem' }}>
+                                          <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                                        </span>
+                                      )}
                                     </div>
                                     <div className={`small ${selectedLabIndex === idx ? 'text-white-50' : 'text-muted'}`}>
                                       {lab.item_id && <span className="mr-2">Code: {lab.item_id}</span>}
@@ -3397,8 +4634,22 @@ export default function DoctorConsultationModal({
                             ) : (
                               <div className="p-3 text-center">
                                 <div className="text-muted small mb-2">
-                                  No covered laboratory test found matching "<strong>{labTestName}</strong>" for {currentPlanName || 'this patient'}.
+                                  No {labTariffMode === 'general' ? 'general' : 'covered'} laboratory test found matching "<strong>{labTestName}</strong>"
+                                  {labTariffMode === 'covered' && currentPlanName ? ` for ${currentPlanName}` : ''}.
                                 </div>
+                                {labTariffMode === 'covered' && generalLabTariffs.length > 0 && (
+                                  <div className="mb-2">
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-warning"
+                                      onClick={() => {
+                                        setLabTariffMode('general');
+                                      }}
+                                    >
+                                      <i className="fas fa-wallet mr-1"></i> Test not covered? Switch to <strong>General Tariff (Pay from your purse)</strong>
+                                    </button>
+                                  </div>
+                                )}
                                 {labTestName.trim() && (
                                   <button
                                     type="button"
@@ -3416,12 +4667,18 @@ export default function DoctorConsultationModal({
 
                       {/* Selected Lab Tariff Pill */}
                       {selectedLabTariff && (
-                        <div className="d-flex align-items-center flex-wrap mt-2 small text-info">
-                          <i className="fas fa-check-circle mr-1"></i>
-                          <span>
-                            Selected Test: <strong>{selectedLabTariff.item}</strong> &bull;
-                            <span className="badge badge-success ml-1 mr-1">₦{Number(selectedLabTariff.rate).toLocaleString()}</span>
-                            ({selectedLabTariff.plan_name || 'Covered Plan'})
+                        <div className="d-flex align-items-center flex-wrap mt-2 small">
+                          {selectedLabTariff.is_pay_from_purse || labTariffMode === 'general' ? (
+                            <span className="badge badge-warning text-dark px-2.5 py-1 font-weight-bold shadow-xs mr-2">
+                              <i className="fas fa-wallet mr-1"></i> Pay from your purse &bull; ₦{Number(selectedLabTariff.rate || 0).toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="badge badge-success px-2.5 py-1 font-weight-bold shadow-xs mr-2">
+                              <i className="fas fa-shield-alt mr-1"></i> HMO Covered &bull; ₦{Number(selectedLabTariff.rate || 0).toLocaleString()} ({selectedLabTariff.plan_name || 'Covered Plan'})
+                            </span>
+                          )}
+                          <span className="text-dark font-weight-bold">
+                            Selected: {selectedLabTariff.item}
                           </span>
                         </div>
                       )}
@@ -3449,6 +4706,11 @@ export default function DoctorConsultationModal({
                                   <div className="d-flex align-items-center">
                                     <i className="fas fa-vial text-info mr-2"></i>
                                     <span className="font-weight-bold text-dark">{l.test}</span>
+                                    {l.is_pay_from_purse && (
+                                      <span className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs" style={{ fontSize: '0.68rem' }}>
+                                        <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                                      </span>
+                                    )}
                                   </div>
                                 </td>
                                 <td>
@@ -3457,7 +4719,16 @@ export default function DoctorConsultationModal({
                                   </span>
                                 </td>
                                 <td>
-                                  {l.tariff_rate ? (
+                                  {l.is_pay_from_purse ? (
+                                    <div className="d-inline-flex align-items-center">
+                                      <span className="badge badge-warning text-dark px-2 py-0.5 font-weight-bold mr-1">
+                                        <i className="fas fa-wallet mr-1"></i> Pay from purse
+                                      </span>
+                                      <span className="font-weight-bold text-success" style={{ fontSize: '0.88rem' }}>
+                                        ₦{Number(l.tariff_rate || 0).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  ) : l.tariff_rate ? (
                                     <span className="badge badge-success px-2 py-1 font-weight-bold">
                                       ₦{Number(l.tariff_rate).toLocaleString()} &bull; {l.plan_name || 'Covered Plan'}
                                     </span>
@@ -4381,11 +5652,18 @@ export default function DoctorConsultationModal({
             boxShadow: '0 -2px 10px rgba(0, 0, 0, 0.03)',
           }}
         >
-          <div>
-            <span className="text-muted small d-inline-flex align-items-center">
-              <i className="fas fa-shield-alt text-primary mr-1.5 opacity-75"></i>
-              Consultation notes &amp; orders are securely saved to the patient's permanent medical timeline.
-            </span>
+          <div className="d-flex align-items-center flex-wrap">
+            {totalBillableCount > 0 ? (
+              <span className="badge badge-light border border-info text-info px-3 py-2 font-weight-bold mr-3 shadow-xs" style={{ fontSize: '0.84rem' }}>
+                <i className="fas fa-file-invoice-dollar text-primary mr-1.5"></i>
+                Billing Summary: <strong>{totalBillableCount} item{totalBillableCount > 1 ? 's' : ''}</strong> (₦{totalConsultationBill.toLocaleString()}) &rarr; <span className="text-success font-weight-bold">Routes to Billing for Payment</span>
+              </span>
+            ) : (
+              <span className="text-muted small d-inline-flex align-items-center">
+                <i className="fas fa-shield-alt text-primary mr-1.5 opacity-75"></i>
+                Consultation notes &amp; orders are securely saved to the patient's permanent medical timeline.
+              </span>
+            )}
           </div>
 
           <div className="d-flex align-items-center" style={{ gap: '10px' }}>

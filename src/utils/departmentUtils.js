@@ -3,7 +3,9 @@
  */
 
 export const DEPARTMENT_LIST = [
-  { key: 'frontdesk', label: '🏥 Front Desk', icon: 'fa-hospital-user', defaultTab: 'dashboard' },
+  { key: 'frontdesk', label: '🏥 Front Desk', icon: 'fa-hospital-user', defaultTab: 'patients' },
+  { key: 'admin', label: '🛡️ Hospital Admin', icon: 'fa-user-shield', defaultTab: 'dashboard' },
+  { key: 'cmd', label: '🩺 Chief Medical Director', icon: 'fa-user-md', defaultTab: 'dashboard' },
   { key: 'nursing', label: '💉 Nursing', icon: 'fa-user-nurse', defaultTab: 'queues' },
   { key: 'clinical', label: '👨‍⚕️ Clinical', icon: 'fa-user-md', defaultTab: 'queues' },
   { key: 'inventory', label: '📦 Inventory', icon: 'fa-boxes', defaultTab: 'inventory' },
@@ -16,6 +18,7 @@ export const DEPARTMENT_LIST = [
   { key: 'radiology', label: '📡 Radiology', icon: 'fa-x-ray', defaultTab: 'radiology' },
   { key: 'billings', label: '💰 Billings Unit', icon: 'fa-money-bill-wave', defaultTab: 'billings' },
   { key: 'reporting', label: '📈 Reporting Unit', icon: 'fa-chart-line', defaultTab: 'reporting' },
+  { key: 'monitor', label: '🖥️ Monitor', icon: 'fa-desktop', defaultTab: 'queues' },
 ];
 
 /**
@@ -174,8 +177,9 @@ export function normalizeDepartmentKey(deptName) {
   if (str.includes('bill') || str.includes('account')) return 'billings';
   if (str.includes('report') || str.includes('record')) return 'reporting';
   if (str.includes('front') || str.includes('desk') || str.includes('recept')) return 'frontdesk';
-  if (str.includes('admin')) return 'frontdesk';
-  if (str.includes('cmd')) return 'clinical';
+  if (str.includes('admin')) return 'admin';
+  if (str.includes('cmd')) return 'cmd';
+  if (str.includes('monitor')) return 'monitor';
 
   return str.replace(/[^a-z0-9]/g, '') || 'frontdesk';
 }
@@ -216,9 +220,21 @@ export function isModuleAllowed(moduleId, assignedModules, userRole) {
 /**
  * Returns the default active workspace tab for a given department key.
  */
-export function getDefaultTabForDepartment(deptKey) {
-  const item = DEPARTMENT_LIST.find((d) => d.key === deptKey);
-  return item ? item.defaultTab : 'dashboard';
+export function getDefaultTabForDepartment(deptKey, userRole = null) {
+  const normKey = normalizeDepartmentKey(deptKey);
+
+  // Front Desk ALWAYS routes to All Registered Patients Directory
+  if (normKey === 'frontdesk') {
+    return 'patients';
+  }
+
+  // Admin or CMD defaults to dashboard
+  if (normKey === 'admin' || normKey === 'cmd') {
+    return 'dashboard';
+  }
+
+  const item = DEPARTMENT_LIST.find((d) => d.key === normKey);
+  return item?.defaultTab || 'dashboard';
 }
 
 /**
@@ -228,13 +244,15 @@ export function formatDepartmentItem(dbDept) {
   if (!dbDept) return null;
   const name = typeof dbDept === 'string' ? dbDept : (dbDept.department || dbDept.name || '');
   const id = typeof dbDept === 'object' ? dbDept.id : undefined;
-  const staffCount = typeof dbDept === 'object' ? dbDept.staff_count : undefined;
+  const staffCount = typeof dbDept === 'object' ? (dbDept.staff_count ?? dbDept.user_count) : undefined;
   const modules = typeof dbDept === 'object' && Array.isArray(dbDept.modules) ? dbDept.modules : [];
   const key = normalizeDepartmentKey(name);
   const known = DEPARTMENT_LIST.find((d) => d.key === key);
 
   const emojiMap = {
     frontdesk: '🏥',
+    admin: '🛡️',
+    cmd: '🩺',
     nursing: '💉',
     clinical: '👨‍⚕️',
     inventory: '📦',
@@ -247,12 +265,13 @@ export function formatDepartmentItem(dbDept) {
     radiology: '📡',
     billings: '💰',
     reporting: '📈',
+    monitor: '🖥️',
   };
 
   const emoji = emojiMap[key] || '🏢';
   const label = known ? known.label : `${emoji} ${name}`;
   const icon = known ? known.icon : 'fa-building';
-  const defaultTab = known ? known.defaultTab : 'queues';
+  const defaultTab = known ? known.defaultTab : (key === 'frontdesk' ? 'patients' : 'queues');
 
   return {
     id,
