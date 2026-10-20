@@ -132,7 +132,7 @@ export default function ScheduleAppointmentModal({
   if (!isOpen) return null;
 
   const patientName = activePatient
-    ? (activePatient.full_name || `${activePatient.surname || ''} ${activePatient.first_name || ''}`.trim() || 'Patient')
+    ? ((activePatient.surname ? `${activePatient.surname} ${activePatient.first_name || ''} ${activePatient.other_name || ''}`.trim() : null) || activePatient.patient_name || 'Patient')
     : '';
 
   const isToday = formData.arrival_date === getTodayDateStr();
@@ -359,7 +359,7 @@ export default function ScheduleAppointmentModal({
                       }}
                     >
                       <div>
-                        <strong className="text-primary">{p.full_name || `${p.surname} ${p.first_name}`}</strong>
+                        <strong className="text-primary">{p.surname ? `${p.surname} ${p.first_name} ${p.other_name || ''}`.trim() : (p.patient_name || 'Patient')}</strong>
                         <span className="badge badge-danger ml-2">{p.hospital_number}</span>
                         <span className="small text-muted ml-2">{p.phone_number}</span>
                       </div>

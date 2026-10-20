@@ -49,8 +49,8 @@ export default function CaseNoteModal({ isOpen, patient, onClose }) {
   if (!isOpen || !patient) return null;
 
   const patientName =
-    patient.full_name ||
-    `${patient.surname || ''} ${patient.first_name || ''}`.trim() ||
+    (patient.surname ? `${patient.surname} ${patient.first_name || ''} ${patient.other_name || ''}`.trim() : null) ||
+    patient.patient_name ||
     'Patient';
   const hospitalNumber = patient.hospital_number || 'N/A';
 
@@ -434,12 +434,15 @@ export default function CaseNoteModal({ isOpen, patient, onClose }) {
                                   ))}
                                   {writtenPrescriptions.map((wp, wpi) => (
                                     <tr key={`wp-${wpi}`}>
-                                      <td className="font-weight-bold text-primary">{wp.drug_name || wp.name || 'Prescription'}</td>
-                                      <td>{wp.dosage || wp.instructions || '-'}</td>
+                                      <td className="font-weight-bold text-primary">
+                                        {wp.item || wp.drug_name || wp.name || 'Prescription'}
+                                        {wp.quantity ? <span className="small text-muted ml-1">({wp.quantity} {wp.dispense_unit || 'Qty'})</span> : null}
+                                      </td>
+                                      <td>{wp.instruction || wp.dosage || wp.instructions || '-'}</td>
                                       <td>
                                         <span className="badge badge-light border">Written Prescription</span>
                                       </td>
-                                      <td>{wp.doctor || wp.staff || 'Physician'}</td>
+                                      <td>{wp.provider || wp.doctor || wp.staff || 'Physician'}</td>
                                       <td>
                                         <span className="badge badge-info px-2 py-1">Prescribed</span>
                                       </td>

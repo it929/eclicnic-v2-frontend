@@ -21,25 +21,243 @@ body {
   overflow-x: hidden;
 }
 
+/* Sidebar Enterprise Sizing & Polish */
+.sidebar {
+  width: 16.5rem !important;
+  min-width: 16.5rem !important;
+  transition: width 0.2s ease-in-out;
+}
+
+@media (min-width: 768px) {
+  .sidebar {
+    width: 16.5rem !important;
+    min-width: 16.5rem !important;
+  }
+}
+
+.sidebar.toggled {
+  width: 6.5rem !important;
+  min-width: 6.5rem !important;
+}
+
+@media (min-width: 768px) {
+  .sidebar.toggled {
+    width: 6.5rem !important;
+    min-width: 6.5rem !important;
+  }
+}
+
 .sidebar .nav-item .collapse-inner {
-  padding: 0.5rem 0;
-  min-width: 10rem;
-  font-size: 0.85rem;
-  margin: 0 1rem;
+  padding: 0.5rem 0.4rem;
+  font-size: 0.84rem;
+  margin: 0.2rem 0.5rem 0.5rem 0.5rem;
+  border-radius: 0.75rem;
+  background-color: #ffffff;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .sidebar .nav-item .collapse-inner .collapse-item {
-  padding: 0.5rem 1rem;
-  margin: 0 0.5rem;
-  display: block;
-  color: #3a3b45;
+  padding: 0.45rem 0.75rem;
+  margin: 2px 0;
+  display: flex;
+  align-items: center;
+  color: #334155;
   text-decoration: none;
-  border-radius: 0.35rem;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 500;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+  transition: all 0.15s ease-in-out;
 }
 
 .sidebar .nav-item .collapse-inner .collapse-item:hover {
-  background-color: #eaecf4;
+  background-color: #f1f5f9;
+  color: #0f172a;
+  text-decoration: none;
+}
+
+.sidebar .nav-item .collapse-inner .collapse-item.active {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+/* Modern Submenu Tree / Nested Guides */
+.sidebar-sub-tree {
+  border-left: 2px solid #e2e8f0;
+  margin-left: 14px;
+  padding-left: 6px;
+  margin-top: 4px;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-sub-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.38rem 0.55rem;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  text-decoration: none !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+.sidebar-sub-item:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.sidebar-sub-item.active {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.sidebar-sub-item .sub-item-text {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-sub-item .sub-item-icon {
+  font-size: 0.72rem;
+  width: 16px;
+  margin-right: 7px;
+  color: #64748b;
+  flex-shrink: 0;
+  text-align: center;
+  transition: color 0.15s ease;
+}
+
+.sidebar-sub-item:hover .sub-item-icon {
+  color: #2563eb;
+}
+
+.sidebar-sub-item-danger {
+  color: #b91c1c !important;
+}
+
+.sidebar-sub-item-danger:hover {
+  background-color: #fef2f2 !important;
+  color: #991b1b !important;
+}
+
+.sidebar-sub-item-danger .sub-item-icon {
+  color: #dc2626 !important;
+}
+
+/* Micro Badges inside Navigation Items */
+.sidebar-micro-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+/* Collapsible Submenu Category Toggle */
+.sidebar-submenu-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.5rem;
+  color: #1e293b;
+  font-weight: 600;
+  font-size: 0.83rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  user-select: none;
+  box-sizing: border-box;
+  text-decoration: none !important;
+}
+
+.sidebar-submenu-toggle:hover {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.sidebar-submenu-toggle.is-open {
+  background-color: #f8fafc;
+  color: #2563eb;
+}
+
+.sidebar-submenu-toggle .icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background-color: #f1f5f9;
+  color: #475569;
+  font-size: 0.75rem;
+  margin-right: 8px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.sidebar-submenu-toggle:hover .icon-badge,
+.sidebar-submenu-toggle.is-open .icon-badge {
+  background-color: #eff6ff;
+  color: #2563eb;
+}
+
+/* Dedicated Bottom RBAC Action Banner */
+.sidebar-rbac-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background-color: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #9f1239;
+  text-decoration: none !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.sidebar-rbac-banner:hover {
+  background-color: #ffe4e6;
+  border-color: #fda4af;
+  color: #881337;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(225, 29, 72, 0.12);
+}
+
+.sidebar-rbac-pill {
+  background-color: #e11d48;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(225, 29, 72, 0.25);
 }
 
 .sidebar-brand-icon {
@@ -291,7 +509,6 @@ body {
     opacity: 1;
   }
 }
-
 .patient-input-group .input-group-text {
   background-color: #eaecf4;
   border-color: #d1d3e2;
@@ -299,6 +516,98 @@ body {
   font-size: 0.8rem;
 }
 
+/* ========================================================= */
+/* Print Optimization Styles */
+/* ========================================================= */
+@media print {
+  /* Hide application chrome, navbars, sidebars, buttons, and backdrops (NEVER hide #wrapper or #root!) */
+  .sidebar,
+  #sidebar-wrapper,
+  .topbar,
+  #content-wrapper > nav,
+  .modal-backdrop,
+  .modal-footer,
+  .modal-header .close,
+  .btn,
+  .d-print-none,
+  .no-print {
+    display: none !important;
+  }
 
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 
+  #root,
+  #wrapper,
+  #content-wrapper,
+  #content {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
 
+  /* When a modal is open during print */
+  body.modal-open,
+  body:has(.modal.show) {
+    overflow: visible !important;
+  }
+
+  .modal {
+    position: static !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: transparent !important;
+  }
+
+  .modal-dialog {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform: none !important;
+  }
+
+  .modal-content {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .modal-body {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  #printable-bill-slip,
+  #printablePatientCard,
+  #printableFamilySheet,
+  .printable-area {
+    display: block !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

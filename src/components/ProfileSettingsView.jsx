@@ -165,6 +165,14 @@ export default function ProfileSettingsView({ initialTab = 'overview', currentUs
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
+    if (!passwordForm.old_password) {
+      setError('Current password is required.');
+      return;
+    }
+    if (!passwordForm.new_password) {
+      setError('New password is required.');
+      return;
+    }
     if (passwordForm.new_password !== passwordForm.confirm_password) {
       setError('New passwords do not match.');
       return;
@@ -172,11 +180,15 @@ export default function ProfileSettingsView({ initialTab = 'overview', currentUs
     try {
       setError(null);
       setMessage(null);
-      const res = await api.changePassword(passwordForm.old_password, passwordForm.new_password);
+      const res = await api.changePassword({
+        old_password: passwordForm.old_password,
+        new_password: passwordForm.new_password,
+      });
       setMessage(res.detail || 'Password changed successfully!');
       setPasswordForm({ old_password: '', new_password: '', confirm_password: '' });
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to change password. Please check your current password.');
+      const serverDetail = err.response?.data?.detail || err.response?.data?.message || (typeof err.response?.data === 'string' ? err.response?.data : null);
+      setError(serverDetail || 'Failed to change password. Please check your current password.');
     }
   };
 

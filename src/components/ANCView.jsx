@@ -205,7 +205,7 @@ export default function ANCView({ onOpenNewPatient }) {
                     <option value="">-- Choose Patient --</option>
                     {patientsList.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.full_name || `${p.surname} ${p.first_name}`} ({p.hospital_number || 'No Hosp#'})
+                        {(p.surname ? `${p.surname} ${p.first_name} ${p.other_name || ''}`.trim() : null) || p.patient_name || 'Patient'} ({p.hospital_number || 'No Hosp#'})
                       </option>
                     ))}
                   </select>

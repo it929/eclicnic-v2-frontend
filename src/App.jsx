@@ -22,6 +22,7 @@ import ScheduleAppointmentModal from './components/ScheduleAppointmentModal';
 import VisitPurposesView from './components/VisitPurposesView';
 import DiagnosesSetupView from './components/DiagnosesSetupView';
 import ComplaintsSetupView from './components/ComplaintsSetupView';
+import FamilyFoldersView from './components/FamilyFoldersView';
 import LoginModal from './components/LoginModal';
 import ToastContainer from './components/Toast';
 import api from './services/api';
@@ -31,6 +32,7 @@ import {
   AVAILABLE_MODULES,
   getDefaultModulesForDepartment,
 } from './utils/departmentUtils';
+import { resolveRoute, getRouteForTab } from './utils/routes';
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -56,7 +58,17 @@ export default function App() {
     }
   });
 
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const savedDept = localStorage.getItem('clinic365_dept') || 'Admin';
+      const isLoggedOut = localStorage.getItem('clinic365_logged_out') === 'true';
+      if (isLoggedOut) return 'dashboard';
+      const deptKey = normalizeDepartmentKey(savedDept);
+      return getDefaultTabForDepartment(deptKey, savedDept);
+    } catch {
+      return 'dashboard';
+    }
+  });
   const [profileSubTab, setProfileSubTab] = useState('overview');
   const [taskSubmodule, setTaskSubmodule] = useState('staff');
   const [taskSubSubmodule, setTaskSubSubmodule] = useState('manage_users');
@@ -86,6 +98,7 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [appointmentsFilter, setAppointmentsFilter] = useState('today');
+  const [patientInitialFilter, setPatientInitialFilter] = useState('all');
   const [isScheduleAppointmentModalOpen, setIsScheduleAppointmentModalOpen] = useState(false);
   const [patientForAppointment, setPatientForAppointment] = useState(null);
 
@@ -132,6 +145,16 @@ export default function App() {
       if (deptsRes) setDbDepartments(deptsRes);
       if (userRes?.user) {
         setUser(userRes.user);
+        const roleName = String(
+          userRes.user.role_name ||
+          (typeof userRes.user.role === 'object' ? userRes.user.role?.name : userRes.user.role) ||
+          userRes.user.department_name ||
+          ''
+        ).toLowerCase();
+        if (userRes.user.is_superuser || userRes.user.is_staff || roleName === 'admin' || roleName === 'cmd') {
+          localStorage.setItem('clinic365_is_admin', 'true');
+          localStorage.setItem('clinic365_user_role', roleName || 'admin');
+        }
         const userDept = userRes.department || userRes.user.department_name || 'Front Desk';
         setCurrentRole(userDept);
         const deptKey = normalizeDepartmentKey(userDept);
@@ -188,10 +211,87 @@ export default function App() {
     setIsNewPatientModalOpen(true);
   };
 
+  const navigateToRoute = useCallback((routeString) => {
+    if (!routeString) return;
+    const resolved = resolveRoute(routeString);
+    if (!resolved) {
+      console.warn(`Route not recognized: ${routeString}`);
+      return;
+    }
+
+    if (resolved.subTab === 'register_modal') {
+      setActiveTab('patients');
+      setPatientInitialFilter('all');
+      setIsNewPatientModalOpen(true);
+      if (window.location.hash !== `#${resolved.route}`) {
+        window.location.hash = resolved.route;
+      }
+      return;
+    }
+
+    setActiveTab(resolved.tab);
+    if (resolved.tab === 'patients') {
+      setPatientInitialFilter(resolved.subTab || 'all');
+    }
+    if (resolved.tab === 'appointments' && resolved.subTab) {
+      setAppointmentsFilter(resolved.subTab);
+    }
+    if (resolved.tab === 'profile' && resolved.subTab) {
+      setProfileSubTab(resolved.subTab);
+    }
+    if (resolved.tab === 'taskmanager') {
+      if (resolved.subTab) setTaskSubmodule(resolved.subTab);
+      if (resolved.subSubTab) setTaskSubSubmodule(resolved.subSubTab);
+    }
+    if (resolved.tab === 'tariffs') {
+      if (resolved.subTab) setTariffSubmodule(resolved.subTab);
+      if (resolved.subSubTab) setTariffSubSubmodule(resolved.subSubTab);
+    }
+    if (resolved.tab === 'inventory') {
+      if (resolved.subTab) setInventorySubmodule(resolved.subTab);
+    }
+    if (resolved.tab === 'reporting') {
+      if (resolved.subTab) setReportingCategory(resolved.subTab);
+      if (resolved.subSubTab) setReportingSubReport(resolved.subSubTab);
+    }
+
+    if (window.location.hash !== `#${resolved.route}`) {
+      window.location.hash = resolved.route;
+    }
+  }, []);
+
+  // Listen to browser URL hash updates (e.g. deep linking / back / forward / submodule click)
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (hash && hash.length > 1) {
+        navigateToRoute(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    if (window.location.hash) {
+      handleHash();
+    }
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, [navigateToRoute]);
+
   const handleLogin = async (username, password) => {
     const res = await api.login(username, password);
     if (res?.user) {
       setUser(res.user);
+      const roleName = String(
+        res.user.role_name ||
+        (typeof res.user.role === 'object' ? res.user.role?.name : res.user.role) ||
+        res.user.department_name ||
+        ''
+      ).toLowerCase();
+      if (res.user.is_superuser || res.user.is_staff || roleName === 'admin' || roleName === 'cmd') {
+        localStorage.setItem('clinic365_is_admin', 'true');
+        localStorage.setItem('clinic365_user_role', roleName || 'admin');
+      } else {
+        localStorage.removeItem('clinic365_is_admin');
+        localStorage.setItem('clinic365_user_role', roleName);
+      }
       const userDept = res.department || res.user.department_name || 'Front Desk';
       setCurrentRole(userDept);
       const deptKey = normalizeDepartmentKey(userDept);
@@ -199,8 +299,8 @@ export default function App() {
       localStorage.setItem('selectedDepartment', deptKey);
       localStorage.setItem('clinic365_dept', userDept);
 
-      // Route directly to the staff's departmental module (e.g. Nursing -> 'queues', Inventory -> 'inventory')
-      const targetTab = getDefaultTabForDepartment(deptKey);
+      // Route directly to the staff's departmental module (e.g. Front Desk -> 'patients', Nursing -> 'queues')
+      const targetTab = getDefaultTabForDepartment(deptKey, userDept);
       setActiveTab(targetTab);
     }
     localStorage.removeItem('clinic365_logged_out');
@@ -213,6 +313,8 @@ export default function App() {
     api.logout();
     localStorage.setItem('clinic365_logged_out', 'true');
     localStorage.removeItem('selectedDepartment');
+    localStorage.removeItem('clinic365_is_admin');
+    localStorage.removeItem('clinic365_user_role');
     setUser(null);
     setIsAuthenticated(false);
     setIsLoginModalOpen(false);
@@ -223,12 +325,33 @@ export default function App() {
     return <LoginPage onLoginSuccess={handleLogin} />;
   }
 
-  const isAdmin = currentRole === 'Admin' || currentRole === 'CMD';
+  const userRole = String(
+    user?.role_name ||
+    (typeof user?.role === 'object' ? user?.role?.name : user?.role) ||
+    localStorage.getItem('clinic365_user_role') ||
+    ''
+  ).toLowerCase();
+
+  const isUserAdmin = Boolean(
+    user?.is_superuser ||
+    user?.is_staff ||
+    userRole === 'admin' ||
+    userRole === 'cmd' ||
+    localStorage.getItem('clinic365_is_admin') === 'true' ||
+    currentRole === 'Admin' ||
+    currentRole === 'CMD'
+  );
+
+  const isAdmin = isUserAdmin;
 
   // Determine allowed modules for current user based on department
   const userAllowedModules = (() => {
     if (isAdmin) return AVAILABLE_MODULES.map((m) => m.id);
 
+    // Primary: Role-Based Access Control Modules from Database
+    if (user?.role_modules && Array.isArray(user.role_modules) && user.role_modules.length > 0) {
+      return user.role_modules;
+    }
     if (user?.department_modules && Array.isArray(user.department_modules) && user.department_modules.length > 0) {
       return user.department_modules;
     }
@@ -257,22 +380,25 @@ export default function App() {
 
   const isTabAllowed = (tab) => {
     if (isAdmin) return true;
-    if (tab === 'dashboard' || tab === 'profile' || tab === 'appointments' || tab === 'visit-purposes') return true;
+    if (tab === 'dashboard' || tab === 'profile' || tab === 'appointments' || tab === 'visit-purposes' || tab === 'diagnoses-setup') return true;
 
     const tabModuleMap = {
-      patients: ['frontdesk', 'nursing', 'clinical', 'anc', 'billings'],
-      appointments: ['frontdesk', 'nursing', 'clinical', 'admin', 'cmd'],
-      'visit-purposes': ['frontdesk', 'nursing', 'clinical', 'admin', 'cmd', 'tariffs'],
-      queues: ['nursing', 'clinical', 'frontdesk'],
-      billings: ['billings'],
+      patients: ['frontdesk', 'fd_registration', 'fd_records', 'fd_uploads', 'nursing', 'clinical', 'anc', 'billings'],
+      appointments: ['frontdesk', 'fd_appointments', 'nursing', 'clinical', 'admin', 'cmd'],
+      'visit-purposes': ['frontdesk', 'fd_appointments', 'nursing', 'clinical', 'admin', 'cmd', 'tariffs'],
+      'diagnoses-setup': ['frontdesk', 'fd_appointments', 'clinical', 'admin', 'cmd', 'tariffs'],
+      'complaints-setup': ['frontdesk', 'fd_appointments', 'clinical', 'admin', 'cmd'],
+      'family-folders': ['frontdesk', 'fd_records', 'nursing', 'clinical'],
+      queues: ['nursing', 'clinical', 'frontdesk', 'fd_attendance', 'fd_records'],
+      billings: ['billings', 'fd_billing'],
       pharmacy: ['opd_pharmacy'],
       ipd: ['ipd_pharmacy', 'nursing'],
-      anc: ['anc', 'nursing', 'clinical'],
+      anc: ['anc', 'nursing', 'clinical', 'fd_records'],
       radiolab: ['laboratory', 'radiology'],
       inventory: ['inventory'],
       reporting: ['reporting'],
       taskmanager: ['taskmanager'],
-      tariffs: ['tariffs'],
+      tariffs: ['tariffs', 'fd_registration', 'fd_uploads'],
     };
 
     const required = tabModuleMap[tab] || [tab];
@@ -286,6 +412,9 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={(tab, subTab, subSubTab) => {
           setActiveTab(tab);
+          if (tab === 'patients') {
+            setPatientInitialFilter(subTab || 'all');
+          }
           if (tab === 'profile' && subTab) setProfileSubTab(subTab);
           if (tab === 'taskmanager') {
             if (subTab) setTaskSubmodule(subTab);
@@ -305,7 +434,12 @@ export default function App() {
             if (subTab) setReportingCategory(subTab);
             if (subSubTab) setReportingSubReport(subSubTab);
           }
+          const targetRoute = getRouteForTab(tab, subTab, subSubTab);
+          if (targetRoute && window.location.hash !== `#${targetRoute}`) {
+            window.location.hash = targetRoute;
+          }
         }}
+        navigateToRoute={navigateToRoute}
         currentRole={currentRole}
         setCurrentRole={setCurrentRole}
         selectedDepartment={selectedDepartment}
@@ -433,11 +567,14 @@ export default function App() {
                   selectedCategory={selectedCategory}
                   setSelectedCategory={setSelectedCategory}
                   categories={categories}
+                  initialFilter={patientInitialFilter}
                   onOpenNewPatient={handleOpenNewPatient}
                   onSelectPatient={(p) => setSelectedPatient(p)}
                   onEditPatient={handleEditPatient}
                   onScheduleAppointment={handleOpenScheduleAppointment}
                   onPatientQueued={loadInitialData}
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                  currentRole={currentRole}
                 />
               )}
 
@@ -522,19 +659,40 @@ export default function App() {
 
               {activeTab === 'visit-purposes' && (
                 <VisitPurposesView
-                  onBack={() => setActiveTab('appointments')}
+                  onBack={() => {
+                    if (window.history.length > 1) {
+                      window.history.back();
+                    } else {
+                      setActiveTab('tariffs');
+                    }
+                  }}
                 />
               )}
 
               {activeTab === 'diagnoses-setup' && (
                 <DiagnosesSetupView
-                  onBack={() => setActiveTab('appointments')}
+                  onBack={() => {
+                    if (window.history.length > 1) {
+                      window.history.back();
+                    } else {
+                      setActiveTab('tariffs');
+                    }
+                  }}
                 />
               )}
 
               {activeTab === 'complaints-setup' && (
                 <ComplaintsSetupView
                   onBack={() => setActiveTab('appointments')}
+                />
+              )}
+
+              {activeTab === 'family-folders' && (
+                <FamilyFoldersView
+                  onSelectPatient={(p) => setSelectedPatient(p)}
+                  onScheduleAppointment={handleOpenScheduleAppointment}
+                  onOpenNewPatient={handleOpenNewPatient}
+                  currentRole={currentRole}
                 />
               )}
             </>

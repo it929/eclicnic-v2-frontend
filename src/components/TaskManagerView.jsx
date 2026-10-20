@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { AVAILABLE_MODULES, getDefaultModulesForDepartment } from '../utils/departmentUtils';
+import RolePermissionManager from './RolePermissionManager';
 
 export default function TaskManagerView({
   initialSubmodule = 'staff',
@@ -626,6 +627,20 @@ export default function TaskManagerView({
                 Statistical Insights
               </a>
             </li>
+            <li className="nav-item">
+              <a
+                className={`nav-link cursor-pointer ${
+                  activeSubmodule === 'rbac' ? 'active bg-danger text-white shadow-sm' : 'text-gray-700'
+                }`}
+                onClick={() => {
+                  setActiveSubmodule('rbac');
+                  setActiveSubSubmodule('roles');
+                }}
+              >
+                <i className="fas fa-sitemap mr-2"></i>
+                Department &amp; Module Access
+              </a>
+            </li>
           </ul>
         </div>
 
@@ -687,7 +702,7 @@ export default function TaskManagerView({
                 } mr-2 mb-1`}
                 onClick={() => setActiveSubSubmodule('departments')}
               >
-                <i className="fas fa-sitemap mr-1"></i> User Categories (Departments)
+                <i className="fas fa-building mr-1"></i> User Categories (Departments)
               </button>
               <button
                 className={`btn btn-sm ${
@@ -696,6 +711,14 @@ export default function TaskManagerView({
                 onClick={() => setActiveSubSubmodule('assign_modules')}
               >
                 <i className="fas fa-cubes mr-1"></i> Assign Modules
+              </button>
+              <button
+                className={`btn btn-sm ${
+                  activeSubSubmodule === 'rbac' ? 'btn-danger text-white font-weight-bold' : 'btn-outline-danger'
+                } mr-2 mb-1`}
+                onClick={() => setActiveSubSubmodule('rbac')}
+              >
+                <i className="fas fa-sitemap mr-1"></i> Department &amp; Module Access
               </button>
             </div>
           )}
@@ -2144,6 +2167,11 @@ export default function TaskManagerView({
             </div>
           </div>
         </div>
+      )}
+
+      {/* 1.9 ROLES & ACCESS CONTROL (RBAC) */}
+      {(activeSubmodule === 'rbac' || (activeSubmodule === 'staff' && activeSubSubmodule === 'rbac')) && (
+        <RolePermissionManager onPermissionsUpdated={onDepartmentsChanged} />
       )}
 
       {/* ======================================================== */}
