@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api from '../services/api';
 import ScheduleAppointmentModal from './ScheduleAppointmentModal';
 import VitalsModal from './VitalsModal';
@@ -350,13 +350,97 @@ export default function AppointmentsView({
     loadAppointments();
   }, [loadAppointments]);
 
+  // Group appointments by patient and arrival_date so each patient has a single consolidated row
+  const groupedAppointments = useMemo(() => {
+    const groups = [];
+    const map = new Map();
+
+    for (const appt of appointments) {
+      const patientKey = appt.patient || appt.hospital_number || appt.patient_name || `anon-${appt.id}`;
+      const dateKey = appt.arrival_date || 'nodate';
+      const groupKey = `${patientKey}_${dateKey}`;
+
+      if (!map.has(groupKey)) {
+        const groupItem = {
+          ...appt,
+          groupKey,
+          appointments: [appt],
+          purposes: [
+            {
+              id: appt.id,
+              purpose: appt.purpose || 'General Consultation',
+              visit_type: appt.visit_type || 'New-case',
+              comment: appt.comment,
+              completed: appt.completed,
+              is_completed: appt.is_completed,
+              is_cancelled: appt.is_cancelled,
+              arrival_time: appt.arrival_time,
+              created_date: appt.created_date,
+              consultation_paid: appt.consultation_paid,
+              consultation_invoiced: appt.consultation_invoiced,
+              can_cancel: appt.can_cancel,
+              rawAppt: appt,
+            },
+          ],
+        };
+        map.set(groupKey, groupItem);
+        groups.push(groupItem);
+      } else {
+        const existing = map.get(groupKey);
+        existing.appointments.push(appt);
+
+        existing.purposes.push({
+          id: appt.id,
+          purpose: appt.purpose || 'General Consultation',
+          visit_type: appt.visit_type || 'New-case',
+          comment: appt.comment,
+          completed: appt.completed,
+          is_completed: appt.is_completed,
+          is_cancelled: appt.is_cancelled,
+          arrival_time: appt.arrival_time,
+          created_date: appt.created_date,
+          consultation_paid: appt.consultation_paid,
+          consultation_invoiced: appt.consultation_invoiced,
+          can_cancel: appt.can_cancel,
+          rawAppt: appt,
+        });
+
+        // If any appointment is active (completed === 0), mark the row as active
+        if (appt.completed === 0) {
+          existing.completed = 0;
+          existing.is_completed = false;
+          existing.is_cancelled = false;
+        }
+
+        // Aggregate vitals: pick whichever record has vitals
+        if (!existing.today_vitals && appt.today_vitals) {
+          existing.today_vitals = appt.today_vitals;
+          existing.has_vitals = true;
+        }
+
+        if (appt.consultation_paid) {
+          existing.consultation_paid = true;
+        }
+        if (appt.consultation_invoiced) {
+          existing.consultation_invoiced = true;
+        }
+        if (appt.has_action_taken) {
+          existing.has_action_taken = true;
+        }
+      }
+    }
+
+    return groups;
+  }, [appointments]);
+
   // Cancel Appointment - Open Professional Modal Dialog
   const handleCancelAppointment = (appt) => {
     const hasAction = Boolean(
       appt.has_action_taken ||
       appt.can_cancel === false ||
       appt.has_vitals ||
-      appt.today_vitals
+      appt.today_vitals ||
+      (appt.appointments && appt.appointments.some((a) => a.has_action_taken || a.can_cancel === false || a.has_vitals || a.today_vitals))
     );
     if (hasAction) {
       showToast(
@@ -375,7 +459,11 @@ export default function AppointmentsView({
     if (!appointmentToCancel) return;
     try {
       setCancelling(true);
-      await api.cancelAppointment(appointmentToCancel.id);
+      const idsToCancel = appointmentToCancel.appointments
+        ? appointmentToCancel.appointments.map((a) => a.id)
+        : [appointmentToCancel.id];
+
+      await Promise.all(idsToCancel.map((id) => api.cancelAppointment(id)));
       showToast(
         `Appointment for ${appointmentToCancel.patient_name || 'patient'} has been cancelled successfully.`,
         'warning',
@@ -398,7 +486,10 @@ export default function AppointmentsView({
   const handleCompleteAppointment = async (appt) => {
     try {
       setActionLoadingId(appt.id);
-      await api.completeAppointment(appt.id);
+      const idsToComplete = appt.appointments
+        ? appt.appointments.map((a) => a.id)
+        : [appt.id];
+      await Promise.all(idsToComplete.map((id) => api.completeAppointment(id)));
       showToast('Appointment marked as completed.', 'success', 'Appointment Completed');
       loadAppointments();
     } catch (err) {
@@ -413,11 +504,17 @@ export default function AppointmentsView({
     if (!appt.patient) return;
     try {
       setActionLoadingId(appt.id);
-      await api.createQueue({
-        patient: appt.patient,
-        purpose: appt.purpose || 'General Consultation',
-        visit_type: appt.visit_type || 'Follow-up',
-      });
+      const purpList = appt.purposes && appt.purposes.length > 0
+        ? appt.purposes
+        : [{ purpose: appt.purpose, visit_type: appt.visit_type }];
+
+      for (const p of purpList) {
+        await api.createQueue({
+          patient: appt.patient,
+          purpose: p.purpose || 'General Consultation',
+          visit_type: p.visit_type || 'Follow-up',
+        });
+      }
       showToast(
         `Patient ${appt.patient_name} admitted from appointment directly into Consultation Queue!`,
         'success',
@@ -496,6 +593,27 @@ export default function AppointmentsView({
     setIsScheduleModalOpen(true);
   };
 
+  // Add More Purpose for Patient from Today's Appointment
+  const handleAddPurposeForPatient = (appt) => {
+    setOpenDropdownId(null);
+    const existingPurpNames = (appt.purposes || []).map((p) => p.purpose).filter(Boolean);
+    const patObj = {
+      id: appt.patient,
+      patient_id: appt.patient,
+      hospital_number: appt.hospital_number,
+      full_name: appt.patient_name,
+      patient_name: appt.patient_name,
+      surname: appt.patient_name,
+      category_name: appt.category_name,
+      gender: appt.patient_gender,
+      age: appt.patient_age,
+      phone_number: appt.patient_phone,
+      existingPurposes: existingPurpNames.length > 0 ? existingPurpNames : (appt.purpose ? [appt.purpose] : []),
+    };
+    setSelectedPatientForSchedule(patObj);
+    setIsScheduleModalOpen(true);
+  };
+
   // Open clinical case note
   const handleOpenCaseNote = (appt) => {
     if (!appt.patient) return;
@@ -535,11 +653,15 @@ export default function AppointmentsView({
     setIsConsultationModalOpen(true);
     setOpenDropdownId(null);
 
-    // Queue / activate in consultation queue in background
+    // Queue / activate in consultation queue in background with combined purposes
     try {
+      const combinedPurposes = appt.purposes && appt.purposes.length > 0
+        ? appt.purposes.map((p) => p.purpose).filter(Boolean).join(', ')
+        : (appt.purpose || 'General Consultation');
+
       await api.createQueue({
         patient: appt.patient,
-        purpose: appt.purpose || 'General Consultation',
+        purpose: combinedPurposes,
         visit_type: appt.visit_type || 'Follow-up',
       });
     } catch (_) {}
@@ -895,7 +1017,12 @@ export default function AppointmentsView({
                 {activeFilter === 'today' ? "Showing today's schedule" : `Status: ${activeFilter}`}
               </span>
               <span>
-                <strong className="text-dark">{appointments.length}</strong> record{appointments.length !== 1 ? 's' : ''} found
+                <strong className="text-dark">{groupedAppointments.length}</strong> patient{groupedAppointments.length !== 1 ? 's' : ''}
+                {appointments.length !== groupedAppointments.length && (
+                  <span className="text-muted ml-1 font-weight-normal">
+                    ({appointments.length} purpose{appointments.length !== 1 ? 's' : ''})
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -995,8 +1122,27 @@ export default function AppointmentsView({
               )}
             </div>
 
-            {/* Right Action: Refresh Button */}
+            {/* Right Action: Schedule & Refresh Buttons */}
             <div className="d-flex align-items-center" style={{ gap: '8px' }}>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary shadow-sm font-weight-bold d-inline-flex align-items-center"
+                style={{
+                  height: '36px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  padding: '0 13px',
+                }}
+                onClick={() => {
+                  setSelectedPatientForSchedule(null);
+                  setShowPatientPicker(true);
+                }}
+                title="Schedule a new patient appointment"
+              >
+                <i className="fas fa-calendar-plus mr-1.5"></i>
+                <span>Schedule Appointment</span>
+              </button>
+
               <button
                 type="button"
                 className="btn btn-sm btn-white border shadow-sm font-weight-bold d-inline-flex align-items-center"
@@ -1045,10 +1191,10 @@ export default function AppointmentsView({
                       <div className="mt-2 text-muted small">Loading appointment records...</div>
                     </td>
                   </tr>
-                ) : appointments.length > 0 ? (
-                  appointments.map((appt, idx) => {
-                    const isCompleted = appt.completed === 1;
-                    const isCancelled = appt.completed === 2;
+                ) : groupedAppointments.length > 0 ? (
+                  groupedAppointments.map((appt, idx) => {
+                    const isCompleted = appt.completed === 1 || (appt.purposes && appt.purposes.every((p) => p.completed === 1));
+                    const isCancelled = appt.completed === 2 || (appt.purposes && appt.purposes.every((p) => p.completed === 2));
                     const isTodayAppt = appt.is_today;
                     const hasActionTaken = Boolean(
                       appt.has_action_taken ||
@@ -1082,8 +1228,20 @@ export default function AppointmentsView({
                       );
                     }
 
+                    const uniqueVisitTypes = Array.from(
+                      new Set((appt.purposes || []).map((p) => p.visit_type).filter(Boolean))
+                    );
+
+                    const uniqueTimes = Array.from(
+                      new Set(
+                        (appt.purposes || [])
+                          .map((p) => (p.arrival_time ? p.arrival_time.substring(0, 5) : ''))
+                          .filter(Boolean)
+                      )
+                    );
+
                     return (
-                      <tr key={appt.id} className={isCancelled ? 'bg-light text-muted' : ''}>
+                      <tr key={appt.id || appt.groupKey || idx} className={isCancelled ? 'bg-light text-muted' : ''}>
                         <td className="align-middle text-center small text-muted">{idx + 1}</td>
 
                         {/* Patient info */}
@@ -1110,20 +1268,75 @@ export default function AppointmentsView({
                         </td>
 
                         {/* Purpose */}
-                        <td className="align-middle">
-                          <div className="font-weight-bold text-gray-800 small">{appt.purpose || 'General Consultation'}</div>
-                          {appt.comment && (
-                            <div className="small text-muted font-italic text-truncate" style={{ maxWidth: '220px' }}>
-                              "{appt.comment}"
+                        <td className="align-middle" style={{ minWidth: '220px', maxWidth: '290px' }}>
+                          <div className="d-flex flex-column" style={{ gap: '6px' }}>
+                            <div className="d-flex flex-wrap align-items-center" style={{ gap: '4px' }}>
+                              {appt.purposes && appt.purposes.length > 0 ? (
+                                appt.purposes.map((p, pIdx) => (
+                                  <div
+                                    key={p.id || pIdx}
+                                    className="badge d-inline-flex align-items-center font-weight-bold"
+                                    style={{
+                                      backgroundColor: '#f8fafc',
+                                      color: '#1e293b',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: '6px',
+                                      padding: '4px 8px',
+                                      fontSize: '0.78rem',
+                                      lineHeight: '1.25',
+                                      whiteSpace: 'normal',
+                                      textAlign: 'left',
+                                      boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                                    }}
+                                  >
+                                    <i
+                                      className="fas fa-stethoscope mr-1.5 text-primary"
+                                      style={{ fontSize: '0.72rem' }}
+                                    ></i>
+                                    <span>{p.purpose || 'General Consultation'}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="font-weight-bold text-gray-800 small">{appt.purpose || 'General Consultation'}</div>
+                              )}
                             </div>
-                          )}
+                            {appt.comment && (
+                              <div className="small text-muted font-italic text-truncate" style={{ maxWidth: '240px', fontSize: '0.74rem' }}>
+                                "{appt.comment}"
+                              </div>
+                            )}
+                            <div>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-outline-primary py-0 px-2 mt-1 shadow-xs d-inline-flex align-items-center font-weight-bold"
+                                style={{ fontSize: '0.72rem', borderRadius: '12px' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAddPurposeForPatient(appt);
+                                }}
+                                title="Add more purpose to schedule for this patient"
+                              >
+                                <i className="fas fa-plus mr-1 text-primary"></i> Add More Purpose
+                              </button>
+                            </div>
+                          </div>
                         </td>
 
                         {/* Visit Type */}
                         <td className="align-middle">
-                          <span className="badge badge-light border text-dark">
-                            {appt.visit_type || 'New-case'}
-                          </span>
+                          <div className="d-flex flex-column align-items-start" style={{ gap: '4px' }}>
+                            {uniqueVisitTypes.length > 0 ? (
+                              uniqueVisitTypes.map((vt, vtIdx) => (
+                                <span key={vtIdx} className="badge badge-light border text-dark">
+                                  {vt}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="badge badge-light border text-dark">
+                                {appt.visit_type || 'New-case'}
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Date & Time */}
@@ -1134,7 +1347,9 @@ export default function AppointmentsView({
                           </div>
                           <div className="small text-muted">
                             <i className="fas fa-clock text-info mr-1"></i>
-                            {appt.arrival_time ? appt.arrival_time.substring(0, 5) : '-'}
+                            {uniqueTimes.length > 0
+                              ? uniqueTimes.join(', ')
+                              : (appt.arrival_time ? appt.arrival_time.substring(0, 5) : '-')}
                           </div>
                         </td>
 
@@ -1170,6 +1385,21 @@ export default function AppointmentsView({
                                 title="Consultation fee invoice generated, awaiting payment"
                               >
                                 <i className="fas fa-file-invoice-dollar mr-1"></i> Consult Invoiced
+                              </span>
+                            )}
+                            {appt.has_draft && (
+                              <span
+                                className="badge px-2 py-0.5 d-inline-flex align-items-center font-weight-bold"
+                                style={{
+                                  backgroundColor: '#fef3c7',
+                                  color: '#b45309',
+                                  border: '1px solid #fcd34d',
+                                  fontSize: '0.72rem',
+                                  borderRadius: '4px',
+                                }}
+                                title="Doctor saved an unfinished consultation draft for this patient"
+                              >
+                                <i className="fas fa-edit mr-1"></i> Draft Saved
                               </span>
                             )}
                             <VitalsBadgeWithPopover
@@ -1412,7 +1642,12 @@ export default function AppointmentsView({
                                     onMouseEnter={() => setActiveSubmenu('encounter')}
                                   >
                                     {renderSubmenuItem('Review Vitals & Histories', null, () => handleOpenVitals(appt))}
-                                    {renderSubmenuItem('Begin Encounter', <i className="fas fa-stethoscope text-primary mr-2"></i>, () => handleBeginEncounter(appt))}
+                                    {renderSubmenuItem(
+                                      appt.has_draft ? 'Continue Consultation (Draft)' : 'Begin Encounter',
+                                      <i className={`fas ${appt.has_draft ? 'fa-edit text-warning' : 'fa-stethoscope text-primary'} mr-2`}></i>,
+                                      () => handleBeginEncounter(appt)
+                                    )}
+                                    {renderSubmenuItem('Add More Purpose / Schedule', <i className="fas fa-calendar-plus text-primary mr-2"></i>, () => handleAddPurposeForPatient(appt))}
                                     {renderDivider()}
                                     {renderSubmenuItem('Immunization Encounter', null, () => handleImmunizationEncounter(appt))}
                                     {renderDivider()}
@@ -1882,12 +2117,17 @@ export default function AppointmentsView({
                       <strong className="text-gray-800">{appointmentToCancel.arrival_time.substring(0, 5)}</strong>
                     </div>
                   )}
-                  {appointmentToCancel.purpose && (
+                  {(appointmentToCancel.purposes && appointmentToCancel.purposes.length > 0) ? (
+                    <div>
+                      <i className="fas fa-stethoscope text-primary mr-1"></i>
+                      <span>{appointmentToCancel.purposes.map((p) => p.purpose).join(', ')}</span>
+                    </div>
+                  ) : appointmentToCancel.purpose ? (
                     <div>
                       <i className="fas fa-stethoscope text-primary mr-1"></i>
                       <span>{appointmentToCancel.purpose}</span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
@@ -1982,6 +2222,20 @@ export default function AppointmentsView({
           </div>
         </>
       )}
+
+      {/* Schedule Appointment Modal for Adding More Purpose */}
+      <ScheduleAppointmentModal
+        isOpen={isScheduleModalOpen}
+        patient={selectedPatientForSchedule}
+        defaultVisitType="Review"
+        onClose={() => {
+          setIsScheduleModalOpen(false);
+          setSelectedPatientForSchedule(null);
+        }}
+        onAppointmentScheduled={() => {
+          loadAppointments();
+        }}
+      />
     </div>
   );
 }

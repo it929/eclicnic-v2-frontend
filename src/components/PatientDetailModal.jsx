@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import VitalsModal from './VitalsModal';
 import ScheduleAppointmentModal from './ScheduleAppointmentModal';
 import CaseNoteModal from './CaseNoteModal';
 import { showToast } from './Toast';
@@ -8,10 +7,7 @@ import { showToast } from './Toast';
 export default function PatientDetailModal({ patient, onClose, onQueueUpdated, onEdit, onScheduleAppointment }) {
   const [currentPatient, setCurrentPatient] = useState(patient);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [loadingQueue, setLoadingQueue] = useState(false);
-  const [queueSuccess, setQueueSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
-  const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isCaseNoteOpen, setIsCaseNoteOpen] = useState(false);
 
@@ -38,34 +34,6 @@ export default function PatientDetailModal({ patient, onClose, onQueueUpdated, o
   if (!patient) return null;
 
   const displayPatient = currentPatient || patient;
-
-  const handleSendToVitals = async () => {
-    try {
-      setLoadingQueue(true);
-      setErrorMessage(null);
-      await api.createQueue({
-        patient: displayPatient.id,
-        purpose: 'Vital Signs',
-        visit_type: 'New-case',
-      });
-      setQueueSuccess(true);
-      showToast(
-        `Patient ${displayPatient.surname ? `${displayPatient.surname} ${displayPatient.first_name || ''}`.trim() : (displayPatient.patient_name || 'Patient')} queued for Nursing Vitals successfully!`,
-        'success',
-        'Nursing Queue'
-      );
-      if (onQueueUpdated) onQueueUpdated();
-      setTimeout(() => {
-        onClose();
-      }, 1200);
-    } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Error sending to nursing vitals';
-      setErrorMessage(msg);
-      showToast(msg, 'danger', 'Queue Failed');
-    } finally {
-      setLoadingQueue(false);
-    }
-  };
 
   return (
     <>
@@ -132,16 +100,6 @@ export default function PatientDetailModal({ patient, onClose, onQueueUpdated, o
 
         {/* Modal Body with internal scrolling */}
         <div className="card-body p-4" style={{ overflowY: 'auto' }}>
-          {queueSuccess && (
-            <div className="alert alert-success d-flex align-items-center py-2 px-3 mb-3 shadow-sm border-0" role="alert">
-              <i className="fas fa-check-circle fa-lg text-success mr-2"></i>
-              <div>
-                <strong className="d-block">Sent to Nursing Vitals!</strong>
-                <div className="small">Patient was successfully added to the vitals queue.</div>
-              </div>
-            </div>
-          )}
-
           {errorMessage && (
             <div className="alert alert-danger d-flex align-items-center py-2 px-3 mb-3 shadow-sm border-0" role="alert">
               <i className="fas fa-exclamation-triangle fa-lg text-danger mr-2"></i>
@@ -310,33 +268,6 @@ export default function PatientDetailModal({ patient, onClose, onQueueUpdated, o
             >
               <i className="fas fa-calendar-plus mr-1"></i> Schedule Appointment
             </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary mr-2 mb-1 shadow-sm font-weight-bold px-3 py-2"
-              onClick={() => setIsVitalsModalOpen(true)}
-              title="Record Vital Signs immediately"
-            >
-              <i className="fas fa-heartbeat mr-1"></i> Take Vitals
-            </button>
-            <button
-              className={`btn btn-sm ${queueSuccess ? 'btn-success font-weight-bold' : 'btn-outline-danger'} mr-2 mb-1 shadow-sm px-3 py-2`}
-              disabled={loadingQueue || queueSuccess}
-              onClick={handleSendToVitals}
-            >
-              {loadingQueue ? (
-                <span>
-                  <i className="fas fa-spinner fa-spin mr-1"></i> Sending to Vitals...
-                </span>
-              ) : queueSuccess ? (
-                <span>
-                  <i className="fas fa-check-circle mr-1"></i> Queued for Vitals!
-                </span>
-              ) : (
-                <span>
-                  <i className="fas fa-list-ol mr-1"></i> Send to Nursing Vitals
-                </span>
-              )}
-            </button>
             {onEdit && (
               <button
                 type="button"
@@ -353,17 +284,6 @@ export default function PatientDetailModal({ patient, onClose, onQueueUpdated, o
           </button>
         </div>
       </div>
-
-      {/* Direct Vitals Recording Modal */}
-      <VitalsModal
-        isOpen={isVitalsModalOpen}
-        patient={displayPatient}
-        onClose={() => setIsVitalsModalOpen(false)}
-        onVitalsSaved={() => {
-          if (onQueueUpdated) onQueueUpdated();
-          onClose();
-        }}
-      />
 
       {/* Schedule Appointment Modal */}
       <ScheduleAppointmentModal

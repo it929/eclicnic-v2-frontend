@@ -101,6 +101,7 @@ export default function App() {
   const [patientInitialFilter, setPatientInitialFilter] = useState('all');
   const [isScheduleAppointmentModalOpen, setIsScheduleAppointmentModalOpen] = useState(false);
   const [patientForAppointment, setPatientForAppointment] = useState(null);
+  const [patientsForAppointment, setPatientsForAppointment] = useState([]);
 
   // Load Dashboard Data
   const loadDashboardData = useCallback(async () => {
@@ -194,9 +195,15 @@ export default function App() {
     }
   };
 
-  const handleOpenScheduleAppointment = (patient) => {
+  const handleOpenScheduleAppointment = (patientOrPatients) => {
     setSelectedPatient(null);
-    setPatientForAppointment(patient || null);
+    if (Array.isArray(patientOrPatients)) {
+      setPatientsForAppointment(patientOrPatients);
+      setPatientForAppointment(patientOrPatients[0] || null);
+    } else {
+      setPatientsForAppointment(patientOrPatients ? [patientOrPatients] : []);
+      setPatientForAppointment(patientOrPatients || null);
+    }
     setIsScheduleAppointmentModalOpen(true);
   };
 
@@ -599,6 +606,7 @@ export default function App() {
 
               {activeTab === 'billings' && (
                 <BillingsView
+                  currentUser={user}
                   onOpenNewPatient={handleOpenNewPatient}
                 />
               )}
@@ -743,9 +751,11 @@ export default function App() {
       <ScheduleAppointmentModal
         isOpen={isScheduleAppointmentModalOpen}
         patient={patientForAppointment}
+        patients={patientsForAppointment}
         onClose={() => {
           setIsScheduleAppointmentModalOpen(false);
           setPatientForAppointment(null);
+          setPatientsForAppointment([]);
         }}
         onAppointmentScheduled={() => {
           loadDashboardData();
