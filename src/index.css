@@ -611,3 +611,94 @@ body {
     print-color-adjust: exact !important;
   }
 }
+
+/* ========================================================= */
+/* Login Page Unified Input Focus & Styling                  */
+/* ========================================================= */
+.login-input-group {
+  display: flex;
+  align-items: stretch;
+  background-color: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out, background-color 0.15s ease-in-out;
+}
+
+.login-input-group:hover {
+  border-color: #94a3b8;
+}
+
+.login-input-group:focus-within {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.18) !important;
+  background-color: #ffffff;
+}
+
+.login-input-group .login-input-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  background-color: #f8fafc;
+  color: #64748b;
+  border-right: 1.5px solid #e2e8f0;
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-right-color 0.15s ease-in-out;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.login-input-group:hover .login-input-icon {
+  color: #475569;
+}
+
+.login-input-group:focus-within .login-input-icon {
+  color: #2563eb;
+  background-color: #eff6ff;
+  border-right-color: #bfdbfe;
+}
+
+.login-input-group .login-input-control {
+  flex: 1 1 auto;
+  width: 1%;
+  height: 42px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #1e293b;
+  background-color: transparent;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.login-input-group .login-input-control::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.login-input-group .login-input-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.85rem;
+  background: transparent;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.15s ease-in-out;
+}
+
+.login-input-group .login-input-toggle:hover {
+  color: #2563eb;
+}
+
+.login-input-group:focus-within .login-input-toggle {
+  color: #64748b;
+}
+
+.login-input-group:focus-within .login-input-toggle:hover {
+  color: #2563eb;
+}

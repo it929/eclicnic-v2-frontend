@@ -321,6 +321,39 @@ export const api = {
     return res.data;
   },
 
+  // ==========================================
+  // Doctor Consultation Drafts
+  // ==========================================
+  async getConsultationDraft(patientId) {
+    if (!patientId) return null;
+    try {
+      const res = await client.get('/consultation-drafts/active/', {
+        params: { patient_id: patientId },
+      });
+      return res.data;
+    } catch (err) {
+      console.warn('Error fetching consultation draft from backend:', err);
+      return null;
+    }
+  },
+
+  async saveConsultationDraft(data) {
+    const res = await client.post('/consultation-drafts/active/', data);
+    return res.data;
+  },
+
+  async clearConsultationDraft(patientId) {
+    if (!patientId) return;
+    try {
+      const res = await client.delete('/consultation-drafts/active/', {
+        params: { patient_id: patientId },
+      });
+      return res.data;
+    } catch (err) {
+      console.warn('Error clearing consultation draft on backend:', err);
+    }
+  },
+
   async getDiagnoses(params = {}) {
     const res = await client.get('/diagnoses/', { params });
     return res.data?.results || res.data || [];
@@ -557,6 +590,11 @@ export const api = {
 
   async generateEncounterBill(billData) {
     const res = await client.post('/invoices/generate-encounter-bill/', billData);
+    return res.data;
+  },
+
+  async issueReceipt(paymentData) {
+    const res = await client.post('/invoices/issue-receipt/', paymentData);
     return res.data;
   },
 
@@ -971,6 +1009,11 @@ export const api = {
 
   async getRadiologyCharges(params = {}) {
     const res = await client.get('/tariffs/radiology-charges/', { params });
+    return res.data;
+  },
+
+  async loadGeneralRadiologyPrices() {
+    const res = await client.post('/tariffs/radiology-charges/load-general-prices/');
     return res.data;
   },
 

@@ -60,6 +60,54 @@ export default function PatientList({
   const [togglingActive, setTogglingActive] = useState(false);
   const [toggleReason, setToggleReason] = useState('');
 
+  // Multi-Patient Selection for Bulk Scheduling
+  const [selectedPatients, setSelectedPatients] = useState([]);
+
+  const isPatientSelected = (patientId) => selectedPatients.some((p) => p.id === patientId);
+
+  const handleTogglePatient = (patient, e) => {
+    if (e) e.stopPropagation();
+    setSelectedPatients((prev) => {
+      const exists = prev.some((p) => p.id === patient.id);
+      if (exists) {
+        return prev.filter((p) => p.id !== patient.id);
+      } else {
+        return [...prev, patient];
+      }
+    });
+  };
+
+  const allPageSelected =
+    patientsList.length > 0 &&
+    patientsList.every((p) => selectedPatients.some((sp) => sp.id === p.id));
+  const somePageSelected =
+    patientsList.some((p) => selectedPatients.some((sp) => sp.id === p.id));
+
+  const handleToggleSelectAll = (e) => {
+    if (e) e.stopPropagation();
+    if (allPageSelected) {
+      const pageIds = new Set(patientsList.map((p) => p.id));
+      setSelectedPatients((prev) => prev.filter((p) => !pageIds.has(p.id)));
+    } else {
+      setSelectedPatients((prev) => {
+        const existingIds = new Set(prev.map((p) => p.id));
+        const newAdditions = patientsList.filter((p) => !existingIds.has(p.id));
+        return [...prev, ...newAdditions];
+      });
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedPatients([]);
+  };
+
+  const handleBulkSchedule = () => {
+    if (selectedPatients.length === 0) return;
+    if (onScheduleAppointment) {
+      onScheduleAppointment(selectedPatients);
+    }
+  };
+
   // Fetch Metadata (Categories, Sponsors, Stats)
   const fetchMetadata = useCallback(async () => {
     try {
@@ -883,9 +931,9 @@ export default function PatientList({
       {/* 4. Main Patients Table Card */}
       <div className="card shadow mb-4 border-0">
         <div className="card-header py-2.5 px-3 bg-white d-flex flex-wrap align-items-center justify-content-between border-bottom">
-          <div className="d-flex align-items-center">
+          <div className="d-flex align-items-center flex-wrap gap-2" style={{ gap: '10px' }}>
             <span
-              className="badge badge-primary px-2.5 py-1 font-weight-bold mr-2 shadow-xs"
+              className="badge badge-primary px-2.5 py-1 font-weight-bold shadow-xs"
               style={{ fontSize: '0.85rem' }}
             >
               {totalCount}
@@ -893,7 +941,37 @@ export default function PatientList({
             <span className="font-weight-bold text-dark">
               Patient Records Found
             </span>
-            {loading && <i className="fas fa-spinner fa-spin text-primary ml-2"></i>}
+            {loading && <i className="fas fa-spinner fa-spin text-primary ml-1"></i>}
+
+            {selectedPatients.length > 0 && (
+              <div className="d-inline-flex align-items-center ml-2 pl-2 border-left gap-2" style={{ gap: '8px' }}>
+                <span className="badge badge-success px-2.5 py-1 font-weight-bold shadow-xs" style={{ fontSize: '0.82rem' }}>
+                  <i className="fas fa-check-double mr-1"></i>
+                  {selectedPatients.length} Selected
+                </span>
+
+                {onScheduleAppointment && (
+                  <button
+                    type="button"
+                    className="btn btn-success btn-sm font-weight-bold shadow-sm d-inline-flex align-items-center py-1 px-2.5"
+                    onClick={handleBulkSchedule}
+                    title="Schedule appointment for all selected patients"
+                  >
+                    <i className="fas fa-calendar-plus mr-1.5"></i>
+                    Schedule ({selectedPatients.length})
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm py-1 px-2"
+                  onClick={handleClearSelection}
+                  title="Deselect all patients"
+                >
+                  <i className="fas fa-times mr-1"></i> Clear
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="d-flex align-items-center gap-2" style={{ gap: '8px' }}>
@@ -920,7 +998,19 @@ export default function PatientList({
             <table className="table table-hover table-bordered mb-0 align-middle">
               <thead className="thead-light">
                 <tr className="small text-uppercase" style={{ letterSpacing: '0.5px' }}>
-                  <th style={{ width: '50px' }} className="text-center">#</th>
+                  <th style={{ width: '40px' }} className="text-center align-middle" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      style={{ cursor: 'pointer', width: '16px', height: '16px', verticalAlign: 'middle' }}
+                      checked={allPageSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = !allPageSelected && somePageSelected;
+                      }}
+                      onChange={handleToggleSelectAll}
+                      title={allPageSelected ? 'Deselect all on this page' : 'Select all on this page'}
+                    />
+                  </th>
+                  <th style={{ width: '45px' }} className="text-center">#</th>
                   <th style={{ minWidth: '150px' }}>Hospital MRN</th>
                   <th style={{ minWidth: '220px' }}>Patient Full Name</th>
                   <th style={{ minWidth: '130px' }}>Contact Details</th>
@@ -935,7 +1025,7 @@ export default function PatientList({
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="10" className="text-center py-5">
+                    <td colSpan="11" className="text-center py-5">
                       <div className="spinner-border text-primary mb-2" role="status">
                         <span className="sr-only">Loading records...</span>
                       </div>
@@ -949,12 +1039,30 @@ export default function PatientList({
                     const nextOfKinRel = p.next_of_kin_relationship || p.relationship_to_patient || '';
                     const nextOfKinPhone = p.next_of_kin_phone || p.phone_numbers || '';
 
+                    const selected = isPatientSelected(p.id);
+
                     return (
                       <tr
                         key={p.id}
                         className="cursor-pointer"
+                        style={selected ? { backgroundColor: '#f0f9ff' } : {}}
                         onClick={() => onSelectPatient && onSelectPatient(p)}
                       >
+                        {/* 0. Selection Checkbox */}
+                        <td
+                          className="text-center align-middle"
+                          style={{ width: '40px' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            style={{ cursor: 'pointer', width: '16px', height: '16px', verticalAlign: 'middle' }}
+                            checked={selected}
+                            onChange={(e) => handleTogglePatient(p, e)}
+                            title={selected ? 'Deselect patient' : 'Select patient for scheduling'}
+                          />
+                        </td>
+
                         {/* 1. # */}
                         <td className="text-center text-muted small align-middle">
                           {rowNumber}
@@ -1215,7 +1323,7 @@ export default function PatientList({
                   })
                 ) : (
                   <tr>
-                    <td colSpan="10" className="text-center py-5">
+                    <td colSpan="11" className="text-center py-5">
                       <div className="py-4">
                         <i className="fas fa-user-slash fa-3x text-gray-300 mb-3 d-block"></i>
                         <h6 className="font-weight-bold text-gray-700">No Patient Records Found</h6>
@@ -1486,6 +1594,65 @@ export default function PatientList({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. Floating Bottom Bulk Action Pill */}
+      {selectedPatients.length > 0 && (
+        <div
+          className="shadow-lg border d-flex align-items-center justify-content-between px-3 py-2 text-white"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1050,
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            borderRadius: '9999px',
+            minWidth: '380px',
+            maxWidth: '92vw',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+          }}
+        >
+          <div className="d-flex align-items-center mr-3">
+            <span
+              className="badge badge-success rounded-circle d-inline-flex align-items-center justify-content-center mr-2 font-weight-bold"
+              style={{ width: '28px', height: '28px', fontSize: '0.85rem' }}
+            >
+              {selectedPatients.length}
+            </span>
+            <div>
+              <div className="font-weight-bold text-white small" style={{ lineHeight: 1.2 }}>
+                {selectedPatients.length} {selectedPatients.length === 1 ? 'Patient' : 'Patients'} Selected
+              </div>
+              <div className="text-light text-truncate" style={{ fontSize: '0.72rem', maxWidth: '240px', opacity: 0.85 }}>
+                {selectedPatients.map((p) => `${p.surname} ${p.first_name?.charAt(0) || ''}.`).join(', ')}
+              </div>
+            </div>
+          </div>
+
+          <div className="d-flex align-items-center gap-2" style={{ gap: '8px' }}>
+            {onScheduleAppointment && (
+              <button
+                type="button"
+                className="btn btn-success btn-sm font-weight-bold px-3 d-flex align-items-center shadow-sm"
+                style={{ borderRadius: '20px' }}
+                onClick={handleBulkSchedule}
+              >
+                <i className="fas fa-calendar-plus mr-1.5"></i>
+                Schedule Appointments ({selectedPatients.length})
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-outline-light btn-sm px-2.5"
+              style={{ borderRadius: '20px', fontSize: '0.78rem' }}
+              onClick={handleClearSelection}
+              title="Clear Selection"
+            >
+              <i className="fas fa-times"></i>
+            </button>
           </div>
         </div>
       )}

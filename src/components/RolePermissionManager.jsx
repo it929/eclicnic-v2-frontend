@@ -1959,27 +1959,94 @@ export default function RolePermissionManager({ onPermissionsUpdated }) {
       {/* ========================================================================= */}
       {isModuleModalOpen && (
         <>
-          <div className="modal-backdrop fade show" style={{ zIndex: 1050 }}></div>
+          <div
+            className="modal-backdrop fade show"
+            style={{ zIndex: 1050, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(3px)' }}
+          ></div>
           <div className="modal fade show d-block" tabIndex="-1" style={{ zIndex: 1060 }}>
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content shadow-lg border-0">
-                <div className="modal-header bg-primary text-white py-3">
-                  <h5 className="modal-title font-weight-bold">
-                    <i className="fas fa-cubes mr-2"></i>
-                    {editingModule ? 'Edit Module' : 'Create New System Module'}
-                  </h5>
-                  <button type="button" className="close text-white" onClick={() => setIsModuleModalOpen(false)}>
-                    <span>&times;</span>
+            <div
+              className="modal-dialog modal-dialog-centered"
+              style={{ maxWidth: '640px', maxHeight: '90vh', margin: '1.5rem auto' }}
+            >
+              <div
+                className="modal-content border-0 shadow-lg"
+                style={{
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                  maxHeight: '90vh',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                {/* Modal Header */}
+                <div
+                  className="modal-header py-3 px-4 text-white d-flex align-items-center justify-content-between flex-shrink-0"
+                  style={{
+                    background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.15)'
+                  }}
+                >
+                  <div className="d-flex align-items-center">
+                    <div
+                      className="rounded-circle d-flex align-items-center justify-content-center mr-3 shadow-sm flex-shrink-0"
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                        backdropFilter: 'blur(4px)',
+                        color: '#ffffff',
+                        fontSize: '18px'
+                      }}
+                    >
+                      <i className={`fas ${editingModule ? 'fa-edit' : 'fa-cubes'}`}></i>
+                    </div>
+                    <div>
+                      <h5 className="modal-title font-weight-bold mb-0 text-white" style={{ fontSize: '1.2rem', letterSpacing: '0.3px' }}>
+                        {editingModule ? 'Edit System Module' : 'Create New System Module'}
+                      </h5>
+                      <div className="text-white-50 small mt-0.5" style={{ fontSize: '0.8rem' }}>
+                        Define top-level hospital workspace module, tabs, and brand accent
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm d-flex align-items-center justify-content-center text-white"
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                      border: 'none',
+                      fontSize: '14px',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onClick={() => setIsModuleModalOpen(false)}
+                    aria-label="Close"
+                  >
+                    <i className="fas fa-times"></i>
                   </button>
                 </div>
-                <form onSubmit={handleSaveModule}>
-                  <div className="modal-body p-4">
+
+                {/* Form */}
+                <form
+                  onSubmit={handleSaveModule}
+                  style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
+                >
+                  <div
+                    className="modal-body p-4"
+                    style={{ backgroundColor: '#fbfcfd', flex: 1, overflowY: 'auto', minHeight: 0 }}
+                  >
                     <div className="row">
                       <div className="col-md-7 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Module Name *</label>
+                        <label className="font-weight-bold text-gray-700 small mb-1">
+                          Module Name <span className="text-danger">*</span>
+                        </label>
                         <input
                           type="text"
                           className="form-control"
+                          style={{ borderRadius: '8px', borderColor: '#cbd5e1', height: '40px' }}
                           placeholder="e.g. Dental Care Clinic"
                           required
                           value={moduleForm.name}
@@ -1987,10 +2054,26 @@ export default function RolePermissionManager({ onPermissionsUpdated }) {
                         />
                       </div>
                       <div className="col-md-5 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Unique Code *</label>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <label className="font-weight-bold text-gray-700 small mb-0">
+                            Unique Code <span className="text-danger">*</span>
+                          </label>
+                          {editingModule && (
+                            <span className="text-muted small" style={{ fontSize: '0.72rem' }}>
+                              <i className="fas fa-lock mr-1 text-muted"></i>Read-only
+                            </span>
+                          )}
+                        </div>
                         <input
                           type="text"
                           className="form-control font-mono"
+                          style={{
+                            borderRadius: '8px',
+                            borderColor: '#cbd5e1',
+                            height: '40px',
+                            backgroundColor: editingModule ? '#f1f5f9' : '#ffffff',
+                            color: editingModule ? '#475569' : 'inherit'
+                          }}
                           placeholder="e.g. dental"
                           required
                           disabled={!!editingModule}
@@ -2002,35 +2085,46 @@ export default function RolePermissionManager({ onPermissionsUpdated }) {
 
                     <div className="row">
                       <div className="col-md-6 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">FontAwesome Icon</label>
+                        <label className="font-weight-bold text-gray-700 small mb-1">FontAwesome Icon</label>
                         <div className="input-group input-group-sm">
                           <div className="input-group-prepend">
-                            <span className="input-group-text">
+                            <span
+                              className="input-group-text border-right-0 text-white"
+                              style={{
+                                borderRadius: '7px 0 0 7px',
+                                borderColor: '#cbd5e1',
+                                backgroundColor: moduleForm.color || '#2563eb',
+                                width: '38px',
+                                justifyContent: 'center'
+                              }}
+                            >
                               <i className={`fas ${moduleForm.icon || 'fa-cubes'}`}></i>
                             </span>
                           </div>
                           <input
                             type="text"
-                            className="form-control"
-                            placeholder="fa-tooth"
+                            className="form-control form-control-sm border-left-0"
+                            style={{ borderRadius: '0 7px 7px 0', borderColor: '#cbd5e1', height: '36px' }}
+                            placeholder="fa-tooth, fa-clinic-medical"
                             value={moduleForm.icon}
                             onChange={(e) => setModuleForm({ ...moduleForm, icon: e.target.value })}
                           />
                         </div>
                       </div>
                       <div className="col-md-6 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Accent Color</label>
+                        <label className="font-weight-bold text-gray-700 small mb-1">Accent Brand Color</label>
                         <div className="d-flex align-items-center">
                           <input
                             type="color"
-                            className="form-control form-control-color mr-2"
+                            className="form-control form-control-color mr-2 shadow-sm"
                             value={moduleForm.color}
                             onChange={(e) => setModuleForm({ ...moduleForm, color: e.target.value })}
-                            style={{ width: '48px', padding: 0 }}
+                            style={{ width: '42px', height: '36px', padding: '2px', borderRadius: '7px', cursor: 'pointer' }}
                           />
                           <input
                             type="text"
                             className="form-control form-control-sm font-mono"
+                            style={{ borderRadius: '7px', borderColor: '#cbd5e1', height: '36px' }}
                             value={moduleForm.color}
                             onChange={(e) => setModuleForm({ ...moduleForm, color: e.target.value })}
                           />
@@ -2039,34 +2133,58 @@ export default function RolePermissionManager({ onPermissionsUpdated }) {
                     </div>
 
                     <div className="form-group mb-3">
-                      <label className="font-weight-bold text-gray-700 small">Primary Workspace Tab Key</label>
+                      <label className="font-weight-bold text-gray-700 small mb-1">Primary Workspace Tab Key</label>
                       <input
                         type="text"
                         className="form-control form-control-sm font-mono"
+                        style={{ borderRadius: '7px', borderColor: '#cbd5e1', height: '36px' }}
                         placeholder="e.g. patients, queues, billings, dental"
                         value={moduleForm.primary_tab}
                         onChange={(e) => setModuleForm({ ...moduleForm, primary_tab: e.target.value })}
                       />
-                      <small className="form-text text-muted">The main tab activated when staff clicks this module.</small>
+                      <small className="form-text text-muted mt-1" style={{ fontSize: '0.78rem' }}>
+                        The default active tab triggered when staff clicks this module in top navigation.
+                      </small>
                     </div>
 
                     <div className="form-group mb-0">
-                      <label className="font-weight-bold text-gray-700 small">Description</label>
+                      <label className="font-weight-bold text-gray-700 small mb-1">Description (Optional)</label>
                       <textarea
                         className="form-control"
                         rows="2"
-                        placeholder="Purpose and capabilities of this hospital module..."
+                        style={{ borderRadius: '8px', borderColor: '#cbd5e1', fontSize: '0.85rem' }}
+                        placeholder="Purpose and clinical capabilities of this hospital module..."
                         value={moduleForm.description}
                         onChange={(e) => setModuleForm({ ...moduleForm, description: e.target.value })}
                       ></textarea>
                     </div>
                   </div>
-                  <div className="modal-footer bg-light py-2 px-4">
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsModuleModalOpen(false)}>
-                      Cancel
+
+                  {/* Modal Footer */}
+                  <div
+                    className="modal-footer py-3 px-4 d-flex justify-content-between align-items-center flex-shrink-0"
+                    style={{ backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', zIndex: 10 }}
+                  >
+                    <button
+                      type="button"
+                      className="btn btn-light border text-muted px-3"
+                      style={{ borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem' }}
+                      onClick={() => setIsModuleModalOpen(false)}
+                    >
+                      <i className="fas fa-times mr-1.5"></i> Cancel
                     </button>
-                    <button type="submit" className="btn btn-primary btn-sm font-weight-bold px-3">
-                      <i className="fas fa-save mr-1"></i> Save Module to Database
+                    <button
+                      type="submit"
+                      className="btn text-white px-4 font-weight-bold shadow-sm"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.88rem',
+                        background: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)',
+                        border: 'none',
+                        padding: '8px 22px'
+                      }}
+                    >
+                      <i className="fas fa-check-circle mr-1.5"></i> Save Module to Database
                     </button>
                   </div>
                 </form>
@@ -2081,78 +2199,258 @@ export default function RolePermissionManager({ onPermissionsUpdated }) {
       {/* ========================================================================= */}
       {isSubmoduleModalOpen && (
         <>
-          <div className="modal-backdrop fade show" style={{ zIndex: 1050 }}></div>
+          <div
+            className="modal-backdrop fade show"
+            style={{ zIndex: 1050, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(3px)' }}
+          ></div>
           <div className="modal fade show d-block" tabIndex="-1" style={{ zIndex: 1060 }}>
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content shadow-lg border-0">
-                <div className="modal-header bg-success text-white py-3">
-                  <h5 className="modal-title font-weight-bold">
-                    <i className="fas fa-plus-circle mr-2"></i>
-                    {editingSubmodule ? 'Edit Submodule' : 'Create New Submodule'}
-                  </h5>
-                  <button type="button" className="close text-white" onClick={() => setIsSubmoduleModalOpen(false)}>
-                    <span>&times;</span>
+            <div
+              className="modal-dialog modal-dialog-centered"
+              style={{ maxWidth: '680px', maxHeight: '90vh', margin: '1.5rem auto' }}
+            >
+              <div
+                className="modal-content border-0 shadow-lg"
+                style={{
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                  maxHeight: '90vh',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                {/* Modal Header */}
+                <div
+                  className="modal-header py-3 px-4 text-white d-flex align-items-center justify-content-between flex-shrink-0"
+                  style={{
+                    background: editingSubmodule
+                      ? 'linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #14b8a6 100%)'
+                      : 'linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%)',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.15)'
+                  }}
+                >
+                  <div className="d-flex align-items-center">
+                    <div
+                      className="rounded-circle d-flex align-items-center justify-content-center mr-3 shadow-sm flex-shrink-0"
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                        backdropFilter: 'blur(4px)',
+                        color: '#ffffff',
+                        fontSize: '18px'
+                      }}
+                    >
+                      <i className={`fas ${editingSubmodule ? 'fa-sliders-h' : 'fa-plus-circle'}`}></i>
+                    </div>
+                    <div>
+                      <h5 className="modal-title font-weight-bold mb-0 text-white" style={{ fontSize: '1.2rem', letterSpacing: '0.3px' }}>
+                        {editingSubmodule ? 'Edit Submodule' : 'Create New Submodule'}
+                      </h5>
+                      <div className="text-white-50 small mt-0.5" style={{ fontSize: '0.8rem' }}>
+                        {editingSubmodule
+                          ? 'Reassign parent module, manage route links, and configure workspace tabs'
+                          : 'Register a new submodule navigation item under any system module'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm d-flex align-items-center justify-content-center text-white"
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                      border: 'none',
+                      fontSize: '14px',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onClick={() => setIsSubmoduleModalOpen(false)}
+                    aria-label="Close"
+                  >
+                    <i className="fas fa-times"></i>
                   </button>
                 </div>
-                <form onSubmit={handleSaveSubmodule}>
-                  <div className="modal-body p-4">
-                    <div className="form-group mb-3">
-                      <label className="font-weight-bold text-gray-700 small">Parent Module *</label>
+
+                {/* Form */}
+                <form
+                  onSubmit={handleSaveSubmodule}
+                  style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
+                >
+                  <div
+                    className="modal-body p-4"
+                    style={{ backgroundColor: '#fbfcfd', flex: 1, overflowY: 'auto', minHeight: 0 }}
+                  >
+                    {/* SECTION 1: Parent Module Box */}
+                    <div
+                      className="p-3 mb-3 rounded shadow-sm"
+                      style={{
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderLeft: '4px solid #0d9488'
+                      }}
+                    >
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <label className="font-weight-bold text-gray-800 small mb-0 d-flex align-items-center">
+                          <i className="fas fa-sitemap mr-2" style={{ color: '#0d9488' }}></i>
+                          Parent System Module <span className="text-danger ml-1">*</span>
+                        </label>
+                        {editingSubmodule ? (
+                          <span
+                            className="badge px-2.5 py-1"
+                            style={{
+                              backgroundColor: '#f0fdfa',
+                              color: '#0f766e',
+                              border: '1px solid #ccfbf1',
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              borderRadius: '20px'
+                            }}
+                          >
+                            <i className="fas fa-exchange-alt mr-1"></i> Reassign to any module
+                          </span>
+                        ) : (
+                          <span className="badge badge-light border text-muted small" style={{ borderRadius: '20px' }}>
+                            Top-Level Container
+                          </span>
+                        )}
+                      </div>
                       <select
-                        className="custom-select custom-select-sm font-weight-bold"
+                        className="custom-select font-weight-bold"
                         required
-                        disabled={!!editingSubmodule}
+                        style={{
+                          height: '42px',
+                          fontSize: '0.92rem',
+                          borderColor: '#cbd5e1',
+                          borderRadius: '8px',
+                          backgroundColor: '#ffffff'
+                        }}
                         value={submoduleForm.module_id}
                         onChange={(e) => setSubmoduleForm({ ...submoduleForm, module_id: Number(e.target.value) })}
                       >
-                        <option value="" disabled>-- Select Parent Module --</option>
+                        <option value="" disabled>-- Select Target Parent Module --</option>
                         {modules.map((m) => (
                           <option key={m.id} value={m.id}>
                             {m.name} ({m.code})
                           </option>
                         ))}
                       </select>
+                      <div className="d-flex align-items-center mt-2 text-muted" style={{ fontSize: '0.78rem', lineHeight: 1.4 }}>
+                        <i className="fas fa-info-circle mr-1.5 flex-shrink-0" style={{ color: '#0d9488' }}></i>
+                        <span>
+                          {editingSubmodule
+                            ? 'Reassigning moves this submodule to the chosen parent module and automatically migrates department role permissions.'
+                            : 'Select which parent system module this submodule will appear under in navigation.'}
+                        </span>
+                      </div>
                     </div>
 
+                    {/* SECTION 2: Identity (Name & Code) */}
                     <div className="row">
                       <div className="col-md-7 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Submodule Name *</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="e.g. Tooth Extraction Records"
-                          required
-                          value={submoduleForm.name}
-                          onChange={(e) => setSubmoduleForm({ ...submoduleForm, name: e.target.value })}
-                        />
+                        <label className="font-weight-bold text-gray-700 small mb-1">
+                          Submodule Display Name <span className="text-danger">*</span>
+                        </label>
+                        <div className="input-group">
+                          <div className="input-group-prepend">
+                            <span
+                              className="input-group-text bg-white border-right-0 text-muted"
+                              style={{ borderRadius: '8px 0 0 8px', borderColor: '#cbd5e1' }}
+                            >
+                              <i className="fas fa-heading" style={{ fontSize: '0.85rem' }}></i>
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            className="form-control border-left-0"
+                            style={{ borderRadius: '0 8px 8px 0', borderColor: '#cbd5e1', height: '40px' }}
+                            placeholder="e.g. Tooth Extraction Records"
+                            required
+                            value={submoduleForm.name}
+                            onChange={(e) => setSubmoduleForm({ ...submoduleForm, name: e.target.value })}
+                          />
+                        </div>
                       </div>
                       <div className="col-md-5 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Unique Code *</label>
-                        <input
-                          type="text"
-                          className="form-control font-mono"
-                          placeholder="e.g. dtExtraction"
-                          required
-                          disabled={!!editingSubmodule}
-                          value={submoduleForm.code}
-                          onChange={(e) => setSubmoduleForm({ ...submoduleForm, code: e.target.value })}
-                        />
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <label className="font-weight-bold text-gray-700 small mb-0">
+                            Unique Code <span className="text-danger">*</span>
+                          </label>
+                          {editingSubmodule && (
+                            <span className="text-muted small" style={{ fontSize: '0.72rem' }}>
+                              <i className="fas fa-lock mr-1 text-muted"></i>Read-only
+                            </span>
+                          )}
+                        </div>
+                        <div className="input-group">
+                          <div className="input-group-prepend">
+                            <span
+                              className="input-group-text border-right-0 text-muted"
+                              style={{
+                                borderRadius: '8px 0 0 8px',
+                                borderColor: '#cbd5e1',
+                                backgroundColor: editingSubmodule ? '#f1f5f9' : '#ffffff'
+                              }}
+                            >
+                              <i className="fas fa-key" style={{ fontSize: '0.85rem' }}></i>
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            className="form-control font-mono border-left-0"
+                            style={{
+                              borderRadius: '0 8px 8px 0',
+                              borderColor: '#cbd5e1',
+                              height: '40px',
+                              backgroundColor: editingSubmodule ? '#f1f5f9' : '#ffffff',
+                              color: editingSubmodule ? '#475569' : 'inherit'
+                            }}
+                            placeholder="e.g. dtExtraction"
+                            required
+                            disabled={!!editingSubmodule}
+                            value={submoduleForm.code}
+                            onChange={(e) => setSubmoduleForm({ ...submoduleForm, code: e.target.value })}
+                          />
+                        </div>
                       </div>
                     </div>
 
-                    {/* Target Route Selection */}
-                    <div className="card bg-light border p-3 mb-3" style={{ borderRadius: '8px' }}>
-                      <div className="d-flex align-items-center justify-content-between mb-2">
-                        <label className="font-weight-bold text-gray-800 small mb-0">
-                          <i className="fas fa-route text-success mr-1.5"></i> Target Page Route (Frontend URL)
+                    {/* SECTION 3: Target Page Route Selection */}
+                    <div
+                      className="p-3 mb-3.5 rounded shadow-sm"
+                      style={{
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '10px'
+                      }}
+                    >
+                      <div className="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                        <label className="font-weight-bold text-gray-800 small mb-0 d-flex align-items-center">
+                          <i className="fas fa-route text-success mr-2"></i> Target Page Route (Frontend URL)
                         </label>
-                        <span className="badge badge-success px-2 py-0.5 small">Route-Driven EMR</span>
+                        <span
+                          className="badge px-2.5 py-1"
+                          style={{
+                            backgroundColor: '#ecfdf5',
+                            color: '#059669',
+                            border: '1px solid #a7f3d0',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            borderRadius: '20px'
+                          }}
+                        >
+                          <i className="fas fa-bolt mr-1"></i> Direct Route Access
+                        </span>
                       </div>
 
-                      <div className="form-group mb-2">
-                        <label className="text-muted small mb-1">Quick Select from Registered Application Pages:</label>
+                      <div className="form-group mb-2.5">
+                        <label className="text-gray-600 small font-weight-bold mb-1" style={{ fontSize: '0.78rem' }}>
+                          Quick Select from Registered Application Pages:
+                        </label>
                         <select
                           className="custom-select custom-select-sm"
+                          style={{ borderRadius: '7px', borderColor: '#cbd5e1', height: '36px', fontSize: '0.84rem' }}
                           value={submoduleForm.route || ''}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -2171,7 +2469,7 @@ export default function RolePermissionManager({ onPermissionsUpdated }) {
                             }
                           }}
                         >
-                          <option value="">-- Choose Preset or Type Custom Route Below --</option>
+                          <option value="">-- Choose Registered Preset or Enter Custom Route Below --</option>
                           {APP_ROUTES.map((r) => (
                             <option key={r.id} value={r.route}>
                               {r.route} &mdash; [{r.module}] {r.label}
@@ -2180,49 +2478,80 @@ export default function RolePermissionManager({ onPermissionsUpdated }) {
                         </select>
                       </div>
 
-                      <div className="form-group mb-0">
-                        <label className="text-muted small mb-1">Exact Route URL Path:</label>
+                      <div className="form-group mb-1">
+                        <label className="text-gray-600 small font-weight-bold mb-1" style={{ fontSize: '0.78rem' }}>
+                          Exact Route URL Path:
+                        </label>
                         <div className="input-group input-group-sm">
                           <div className="input-group-prepend">
-                            <span className="input-group-text font-mono bg-white text-muted">#</span>
+                            <span
+                              className="input-group-text font-mono bg-light text-muted font-weight-bold"
+                              style={{ borderRadius: '7px 0 0 7px', borderColor: '#cbd5e1' }}
+                            >
+                              #
+                            </span>
                           </div>
                           <input
                             type="text"
-                            className="form-control form-control-sm font-mono"
-                            placeholder="e.g. /patients/active, /appointments/today, /queues/waiting"
+                            className="form-control form-control-sm font-mono border-left-0"
+                            style={{ borderRadius: '0 7px 7px 0', borderColor: '#cbd5e1', height: '36px', fontSize: '0.86rem' }}
+                            placeholder="e.g. /patients/register, /appointments/today"
                             value={submoduleForm.route || ''}
                             onChange={(e) => setSubmoduleForm({ ...submoduleForm, route: e.target.value })}
                           />
                         </div>
-                        <small className="form-text text-muted mt-1">
+                        <div className="text-muted mt-1.5" style={{ fontSize: '0.75rem' }}>
+                          <i className="fas fa-external-link-alt mr-1 text-muted"></i>
                           When staff in an assigned department clicks this submodule, this route will immediately open the page.
-                        </small>
+                        </div>
                       </div>
                     </div>
 
+                    {/* SECTION 4: Navigation Tabs & Icon */}
                     <div className="row">
                       <div className="col-md-6 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Workspace Tab Key</label>
-                        <input
-                          type="text"
-                          className="form-control form-control-sm font-mono"
-                          placeholder="e.g. queues, patients"
-                          value={submoduleForm.tab_key}
-                          onChange={(e) => setSubmoduleForm({ ...submoduleForm, tab_key: e.target.value })}
-                        />
-                      </div>
-                      <div className="col-md-6 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Icon</label>
+                        <label className="font-weight-bold text-gray-700 small mb-1">Workspace Tab Key</label>
                         <div className="input-group input-group-sm">
                           <div className="input-group-prepend">
-                            <span className="input-group-text">
+                            <span
+                              className="input-group-text bg-white border-right-0 text-muted"
+                              style={{ borderRadius: '7px 0 0 7px', borderColor: '#cbd5e1' }}
+                            >
+                              <i className="fas fa-folder" style={{ fontSize: '0.8rem' }}></i>
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm font-mono border-left-0"
+                            style={{ borderRadius: '0 7px 7px 0', borderColor: '#cbd5e1', height: '36px' }}
+                            placeholder="e.g. queues, patients"
+                            value={submoduleForm.tab_key}
+                            onChange={(e) => setSubmoduleForm({ ...submoduleForm, tab_key: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div className="col-md-6 form-group mb-3">
+                        <label className="font-weight-bold text-gray-700 small mb-1">FontAwesome Icon</label>
+                        <div className="input-group input-group-sm">
+                          <div className="input-group-prepend">
+                            <span
+                              className="input-group-text border-right-0 text-white"
+                              style={{
+                                borderRadius: '7px 0 0 7px',
+                                borderColor: '#cbd5e1',
+                                backgroundColor: '#0d9488',
+                                width: '38px',
+                                justifyContent: 'center'
+                              }}
+                            >
                               <i className={`fas ${submoduleForm.icon || 'fa-circle'}`}></i>
                             </span>
                           </div>
                           <input
                             type="text"
-                            className="form-control"
-                            placeholder="fa-tooth"
+                            className="form-control form-control-sm border-left-0"
+                            style={{ borderRadius: '0 7px 7px 0', borderColor: '#cbd5e1', height: '36px' }}
+                            placeholder="fa-user-injured, fa-stethoscope"
                             value={submoduleForm.icon}
                             onChange={(e) => setSubmoduleForm({ ...submoduleForm, icon: e.target.value })}
                           />
@@ -2230,45 +2559,70 @@ export default function RolePermissionManager({ onPermissionsUpdated }) {
                       </div>
                     </div>
 
+                    {/* SECTION 5: Sub-Tab & Order */}
                     <div className="row">
                       <div className="col-md-6 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Sub-Tab (Optional)</label>
+                        <label className="font-weight-bold text-gray-700 small mb-1">Sub-Tab Key (Optional)</label>
                         <input
                           type="text"
                           className="form-control form-control-sm font-mono"
+                          style={{ borderRadius: '7px', borderColor: '#cbd5e1', height: '36px' }}
                           placeholder="e.g. ambulatory, today"
                           value={submoduleForm.sub_tab}
                           onChange={(e) => setSubmoduleForm({ ...submoduleForm, sub_tab: e.target.value })}
                         />
                       </div>
                       <div className="col-md-6 form-group mb-3">
-                        <label className="font-weight-bold text-gray-700 small">Display Order</label>
+                        <label className="font-weight-bold text-gray-700 small mb-1">Display Order Priority</label>
                         <input
                           type="number"
                           className="form-control form-control-sm"
+                          style={{ borderRadius: '7px', borderColor: '#cbd5e1', height: '36px' }}
                           value={submoduleForm.order}
                           onChange={(e) => setSubmoduleForm({ ...submoduleForm, order: e.target.value })}
                         />
                       </div>
                     </div>
 
+                    {/* SECTION 6: Description */}
                     <div className="form-group mb-0">
-                      <label className="font-weight-bold text-gray-700 small">Description</label>
+                      <label className="font-weight-bold text-gray-700 small mb-1">Description (Optional)</label>
                       <textarea
                         className="form-control"
                         rows="2"
-                        placeholder="Optional details..."
+                        style={{ borderRadius: '8px', borderColor: '#cbd5e1', fontSize: '0.85rem' }}
+                        placeholder="Brief description of this submodule and user actions..."
                         value={submoduleForm.description}
                         onChange={(e) => setSubmoduleForm({ ...submoduleForm, description: e.target.value })}
                       ></textarea>
                     </div>
                   </div>
-                  <div className="modal-footer bg-light py-2 px-4">
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsSubmoduleModalOpen(false)}>
-                      Cancel
+
+                  {/* Modal Footer */}
+                  <div
+                    className="modal-footer py-3 px-4 d-flex justify-content-between align-items-center flex-shrink-0"
+                    style={{ backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', zIndex: 10 }}
+                  >
+                    <button
+                      type="button"
+                      className="btn btn-light border text-muted px-3"
+                      style={{ borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem' }}
+                      onClick={() => setIsSubmoduleModalOpen(false)}
+                    >
+                      <i className="fas fa-times mr-1.5"></i> Cancel
                     </button>
-                    <button type="submit" className="btn btn-success btn-sm font-weight-bold px-3">
-                      <i className="fas fa-save mr-1"></i> Save Submodule to Database
+                    <button
+                      type="submit"
+                      className="btn text-white px-4 font-weight-bold shadow-sm"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.88rem',
+                        background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+                        border: 'none',
+                        padding: '8px 22px'
+                      }}
+                    >
+                      <i className="fas fa-check-circle mr-1.5"></i> Save Submodule to Database
                     </button>
                   </div>
                 </form>

@@ -85,38 +85,38 @@ export default function LoginPage({ onLoginSuccess }) {
 
       {/* Login Card Container */}
       <div
-        className="container"
+        className="container px-3"
         style={{
           position: 'relative',
           zIndex: 10,
-          maxWidth: '460px',
-          padding: '20px',
+          maxWidth: '435px',
+          margin: 'auto',
         }}
       >
         <div
           className="shadow-2xl"
           style={{
-            background: 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(16px)',
-            borderRadius: '1.25rem',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.35)',
+            background: 'rgba(255, 255, 255, 0.98)',
+            backdropFilter: 'blur(20px)',
+            borderRadius: '1.1rem',
+            border: '1px solid rgba(255, 255, 255, 0.6)',
+            boxShadow: '0 20px 45px -10px rgba(15, 23, 42, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.4)',
             overflow: 'hidden',
           }}
         >
-          {/* Card Top Brand Header with Official Logo */}
+          {/* Card Top Brand Header with Balanced Logo */}
           <div
-            className="p-4 text-center bg-white"
+            className="pt-3.5 pb-2.5 px-4 text-center bg-white"
             style={{
-              borderBottom: '1px solid #e3e6f0',
+              borderBottom: '1px solid #e9ecef',
             }}
           >
             <div
-              className="d-inline-flex align-items-center justify-content-center mb-2 p-2 bg-white rounded-circle shadow-sm"
+              className="d-inline-flex align-items-center justify-content-center mb-2 p-1.5 bg-white rounded-circle shadow-sm"
               style={{
-                width: '84px',
-                height: '84px',
-                border: '2px solid #e3e6f0',
+                width: '62px',
+                height: '62px',
+                border: '2px solid #e2e8f0',
               }}
             >
               <img
@@ -125,108 +125,114 @@ export default function LoginPage({ onLoginSuccess }) {
                 style={{ width: '85%', height: '85%', objectFit: 'contain' }}
               />
             </div>
-            <h4 className="font-weight-bold mb-0 text-primary" style={{ letterSpacing: '0.5px' }}>
+            <h5
+              className="font-weight-bold mb-0 text-primary"
+              style={{
+                letterSpacing: '0.6px',
+                fontSize: '1.22rem',
+                color: '#1e40af',
+              }}
+            >
               ISALU HOSPITALS
-            </h4>
-            <div className="badge badge-light border text-muted px-2 py-1 mt-1 font-weight-bold" style={{ fontSize: '0.7rem' }}>
-              RC 502112
+            </h5>
+            <div className="d-flex align-items-center justify-content-center mt-1.5 flex-wrap" style={{ gap: '6px' }}>
+              <span
+                className="badge badge-light border text-muted px-2 py-0.5 font-weight-bold"
+                style={{ fontSize: '0.68rem', letterSpacing: '0.4px' }}
+              >
+                RC 502112
+              </span>
+              <span className="text-muted" style={{ fontSize: '0.72rem' }}>&bull;</span>
+              <span
+                className="text-muted font-weight-bold"
+                style={{ fontSize: '0.75rem', letterSpacing: '0.2px' }}
+              >
+                Clinic365 Enterprise HIS
+              </span>
             </div>
-            <p className="small mb-0 text-muted mt-2 font-weight-bold">
-              Clinic365 Enterprise HIS &bull; Clinical EMR Portal
-            </p>
           </div>
 
           {/* Form Content */}
-          <div className="p-4">
-            <div className="text-center mb-4">
-              <h5 className="font-weight-bold text-gray-800 mb-1">Welcome Back</h5>
-              <p className="text-muted small mb-0">Sign in to your clinical or administrative account</p>
+          <div className="px-4 pt-3 pb-3.5">
+            <div className="text-center mb-3">
+              <h6 className="font-weight-bold text-gray-800 mb-1" style={{ fontSize: '1rem' }}>
+                Welcome Back
+              </h6>
+              <p className="text-muted small mb-0" style={{ fontSize: '0.78rem' }}>
+                Sign in to your clinical or administrative account
+              </p>
             </div>
 
             {error && (
               <div
-                className="alert alert-danger py-2 px-3 small font-weight-bold d-flex align-items-center mb-3"
+                className="alert alert-danger py-2 px-3 small font-weight-bold d-flex align-items-center mb-2.5"
                 role="alert"
-                style={{ borderRadius: '0.5rem' }}
+                style={{ borderRadius: '0.4rem', fontSize: '0.8rem' }}
               >
-                <i className="fas fa-exclamation-circle mr-2 fa-lg"></i>
-                <div>{error}</div>
+                <i className="fas fa-exclamation-circle mr-2 fa-sm"></i>
+                <div style={{ lineHeight: 1.35 }}>{error}</div>
               </div>
             )}
 
             <form onSubmit={handleSubmit}>
               {/* Staff ID Field */}
-              <div className="form-group mb-3">
-                <label className="small font-weight-bold text-gray-700 mb-1">
+              <div className="form-group mb-2.5">
+                <label
+                  className="font-weight-bold text-gray-700 mb-1 d-block"
+                  style={{ fontSize: '0.78rem', letterSpacing: '0.2px' }}
+                >
                   Staff ID / Username
                 </label>
-                <div className="input-group">
-                  <div className="input-group-prepend">
-                    <span className="input-group-text bg-light border-right-0 text-primary">
-                      <i className="fas fa-id-badge"></i>
-                    </span>
+                <div className="login-input-group">
+                  <div className="login-input-icon">
+                    <i className="fas fa-id-badge"></i>
                   </div>
                   <input
                     type="text"
-                    className="form-control border-left-0 font-weight-bold"
+                    className="login-input-control"
                     placeholder="e.g. 1638"
                     required
                     autoFocus
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    style={{ height: '46px' }}
                   />
                 </div>
               </div>
 
               {/* Password Field */}
-              <div className="form-group mb-3">
-                <div className="d-flex justify-content-between align-items-center mb-1">
-                  <label className="small font-weight-bold text-gray-700 mb-0">
-                    Password
-                  </label>
-                  <a
-                    href="#"
-                    className="small text-primary font-weight-bold"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setShowForgotModal(true);
-                    }}
-                  >
-                    Forgot Password?
-                  </a>
-                </div>
-                <div className="input-group">
-                  <div className="input-group-prepend">
-                    <span className="input-group-text bg-light border-right-0 text-primary">
-                      <i className="fas fa-lock"></i>
-                    </span>
+              <div className="form-group mb-2.5">
+                <label
+                  className="font-weight-bold text-gray-700 mb-1 d-block"
+                  style={{ fontSize: '0.78rem', letterSpacing: '0.2px' }}
+                >
+                  Password
+                </label>
+                <div className="login-input-group">
+                  <div className="login-input-icon">
+                    <i className="fas fa-lock"></i>
                   </div>
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    className="form-control border-left-0 border-right-0 font-weight-bold"
+                    className="login-input-control"
                     placeholder="Enter account password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    style={{ height: '46px' }}
                   />
-                  <div className="input-group-append">
-                    <button
-                      type="button"
-                      className="btn btn-light border border-left-0 text-muted"
-                      onClick={() => setShowPassword(!showPassword)}
-                      tabIndex="-1"
-                      title={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      <i className={showPassword ? 'fas fa-eye-slash text-primary' : 'fas fa-eye'}></i>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="login-input-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex="-1"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={showPassword ? 'fas fa-eye-slash text-primary' : 'fas fa-eye'}></i>
+                  </button>
                 </div>
               </div>
 
-              {/* Remember Me */}
-              <div className="form-group d-flex align-items-center justify-content-between mb-4">
-                <div className="custom-control custom-checkbox">
+              {/* Remember Me & Forgot Password in one clean row */}
+              <div className="d-flex align-items-center justify-content-between pt-1 mb-3">
+                <div className="custom-control custom-checkbox" style={{ minHeight: 'auto' }}>
                   <input
                     type="checkbox"
                     className="custom-control-input"
@@ -234,23 +240,40 @@ export default function LoginPage({ onLoginSuccess }) {
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
                   />
-                  <label className="custom-control-label small text-muted" htmlFor="rememberMeCheck">
-                    Remember my credentials
+                  <label
+                    className="custom-control-label text-muted font-weight-normal"
+                    htmlFor="rememberMeCheck"
+                    style={{ fontSize: '0.8rem', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    Remember me
                   </label>
                 </div>
+                <a
+                  href="#"
+                  className="text-primary font-weight-bold"
+                  style={{ fontSize: '0.8rem', textDecoration: 'none' }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowForgotModal(true);
+                  }}
+                >
+                  Forgot Password?
+                </a>
               </div>
 
               {/* Submit Button */}
               <button
                 type="submit"
-                className="btn btn-primary btn-block shadow-sm font-weight-bold py-2 mb-3"
+                className="btn btn-primary btn-block shadow-sm font-weight-bold d-flex align-items-center justify-content-center mb-1"
                 disabled={loading}
                 style={{
-                  height: '46px',
-                  borderRadius: '0.5rem',
-                  fontSize: '0.95rem',
-                  letterSpacing: '0.5px',
-                  background: 'linear-gradient(135deg, #4e73df 0%, #2e59d9 100%)',
+                  height: '44px',
+                  borderRadius: '0.45rem',
+                  fontSize: '0.92rem',
+                  letterSpacing: '0.4px',
+                  background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)',
+                  border: 'none',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
                 }}
               >
                 {loading ? (
@@ -268,15 +291,19 @@ export default function LoginPage({ onLoginSuccess }) {
 
           {/* Card Footer Security Tagline */}
           <div
-            className="py-2 px-4 text-center bg-light border-top"
-            style={{ fontSize: '0.75rem', color: '#6c757d' }}
+            className="py-2 px-3 text-center bg-light border-top d-flex align-items-center justify-content-center"
+            style={{ fontSize: '0.72rem', color: '#64748b', gap: '6px' }}
           >
-            <i className="fas fa-shield-alt text-success mr-1"></i> Encrypted 256-bit TLS &bull; Role-Based Access Control
+            <i className="fas fa-shield-alt text-success"></i>
+            <span>Encrypted 256-bit TLS &bull; Role-Based Access Control</span>
           </div>
         </div>
 
         {/* Outer footer */}
-        <div className="text-center text-white-50 mt-3 small font-weight-bold">
+        <div
+          className="text-center text-white-50 mt-3 font-weight-bold"
+          style={{ fontSize: '0.73rem', letterSpacing: '0.2px' }}
+        >
           &copy; {new Date().getFullYear()} Isalu Hospital &bull; Clinic365 Health Information System
         </div>
       </div>

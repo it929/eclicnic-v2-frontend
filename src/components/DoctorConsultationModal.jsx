@@ -219,6 +219,13 @@ export default function DoctorConsultationModal({
   const [treatmentPlan, setTreatmentPlan] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
 
+  // Consultation Draft State (resume work in progress)
+  const [hasActiveDraft, setHasActiveDraft] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState(null);
+  const [restoringDraft, setRestoringDraft] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+
   // Clinical Medication Prescription state
   const [prescriptions, setPrescriptions] = useState([]);
   const [drugName, setDrugName] = useState('');
@@ -267,6 +274,8 @@ export default function DoctorConsultationModal({
   const [radiologyOrders, setRadiologyOrders] = useState([]);
   const [radiologyScanName, setRadiologyScanName] = useState('');
   const [coveredRadiologyTariffs, setCoveredRadiologyTariffs] = useState([]);
+  const [generalRadiologyTariffs, setGeneralRadiologyTariffs] = useState([]);
+  const [radiologyTariffMode, setRadiologyTariffMode] = useState('covered'); // 'covered' | 'general'
   const [loadingCoveredRadiology, setLoadingCoveredRadiology] = useState(false);
   const [showRadiologyDropdown, setShowRadiologyDropdown] = useState(false);
   const [selectedRadiologyTariff, setSelectedRadiologyTariff] = useState(null);
@@ -642,21 +651,34 @@ export default function DoctorConsultationModal({
     }
   };
 
-  // 2. Load covered radiology investigation charges attached to this patient's Sponsor and Plan
+  // 2. Load covered radiology investigation charges attached to this patient's Sponsor and Plan AND general prices
   const loadPatientRadiologyTariffs = async (pId, sId, plId, searchQuery = '') => {
     try {
       setLoadingCoveredRadiology(true);
-      const params = {};
-      if (pId) params.patient = pId;
-      if (sId) params.sponsor = sId;
-      if (plId) params.plan = plId;
-      if (searchQuery) params.search = searchQuery;
+      const coveredParams = { tariff_type: 'covered' };
+      if (pId) coveredParams.patient = pId;
+      if (sId) coveredParams.sponsor = sId;
+      if (plId) coveredParams.plan = plId;
+      if (searchQuery) coveredParams.search = searchQuery;
 
-      const radRes = await api.getRadiologyCharges(params).catch(() => ({ charges: [] }));
-      const radList = radRes?.charges || (Array.isArray(radRes) ? radRes : []);
-      setCoveredRadiologyTariffs(radList);
+      const [coveredRes, generalRes] = await Promise.all([
+        api.getRadiologyCharges(coveredParams).catch(() => ({ charges: [] })),
+        api.getRadiologyCharges({ tariff_type: 'general', search: searchQuery }).catch(() => ({ charges: [] })),
+      ]);
+
+      const coveredList = Array.isArray(coveredRes) ? coveredRes : (coveredRes?.charges || coveredRes?.results || []);
+      const generalList = Array.isArray(generalRes) ? generalRes : (generalRes?.charges || generalRes?.results || []);
+
+      setCoveredRadiologyTariffs(coveredList);
+      setGeneralRadiologyTariffs(generalList);
+
+      if (isPrivatePatient) {
+        setRadiologyTariffMode('general');
+      } else {
+        setRadiologyTariffMode('covered');
+      }
     } catch (err) {
-      console.error('Error loading covered radiology tariffs for sponsor/plan:', err);
+      console.error('Error loading covered radiology tariffs for sponsor/plan & general:', err);
     } finally {
       setLoadingCoveredRadiology(false);
     }
@@ -732,8 +754,126 @@ export default function DoctorConsultationModal({
       } catch (_) {} finally {
         setLoadingHistory(false);
       }
+
+      // Check and restore any unfinished consultation draft for this patient
+      await restoreConsultationDraft(patientId);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Restore consultation draft (from backend database and localStorage cache)
+  const restoreConsultationDraft = async (pId) => {
+    if (!pId) return;
+    try {
+      setRestoringDraft(true);
+      let draftData = null;
+      let savedTimestamp = null;
+
+      // 1. Fetch from backend database
+      try {
+        const backendRes = await api.getConsultationDraft(pId);
+        if (backendRes && backendRes.has_draft && backendRes.draft?.draft_data) {
+          draftData = backendRes.draft.draft_data;
+          savedTimestamp = backendRes.draft.updated_at || backendRes.draft.created_at;
+        }
+      } catch (beErr) {
+        console.warn('Backend draft fetch failed:', beErr);
+      }
+
+      // 2. Check localStorage fallback / cache
+      const localKey = `clinic365_consultation_draft_${pId}`;
+      const localSaved = localStorage.getItem(localKey);
+      if (localSaved) {
+        try {
+          const parsedLocal = JSON.parse(localSaved);
+          if (!draftData || (parsedLocal._savedAt && (!savedTimestamp || new Date(parsedLocal._savedAt) > new Date(savedTimestamp)))) {
+            draftData = parsedLocal;
+            savedTimestamp = parsedLocal._savedAt;
+          }
+        } catch (_) {}
+      }
+
+      if (draftData) {
+        if (Array.isArray(draftData.selectedComplaints) && draftData.selectedComplaints.length > 0) {
+          setSelectedComplaints(draftData.selectedComplaints);
+        }
+        if (draftData.customComplaint) setCustomComplaint(draftData.customComplaint);
+        if (draftData.historyOfIllness) setHistoryOfIllness(draftData.historyOfIllness);
+        if (draftData.physicalExam) setPhysicalExam(draftData.physicalExam);
+        if (draftData.primaryDiagnosis) {
+          setPrimaryDiagnosis(draftData.primaryDiagnosis);
+          setDiagnosisError(false);
+        }
+        if (draftData.icd11Code) setIcd11Code(draftData.icd11Code);
+        if (draftData.diagnosisComments) setDiagnosisComments(draftData.diagnosisComments);
+        if (draftData.treatmentPlan) setTreatmentPlan(draftData.treatmentPlan);
+        if (draftData.followUpDate) setFollowUpDate(draftData.followUpDate);
+
+        if (Array.isArray(draftData.prescriptions) && draftData.prescriptions.length > 0) {
+          setPrescriptions(draftData.prescriptions);
+        }
+        if (Array.isArray(draftData.labOrders) && draftData.labOrders.length > 0) {
+          setLabOrders(draftData.labOrders);
+        }
+        if (Array.isArray(draftData.radiologyOrders) && draftData.radiologyOrders.length > 0) {
+          setRadiologyOrders(draftData.radiologyOrders);
+        }
+        if (Array.isArray(draftData.otherServiceOrders) && draftData.otherServiceOrders.length > 0) {
+          setOtherServiceOrders(draftData.otherServiceOrders);
+        }
+
+        setHasActiveDraft(true);
+        setDraftSavedAt(savedTimestamp);
+        showToast(
+          'Active consultation draft restored! You can continue documentation seamlessly.',
+          'info',
+          'Draft Restored'
+        );
+      }
+    } catch (err) {
+      console.warn('Error checking/restoring consultation draft:', err);
+    } finally {
+      setRestoringDraft(false);
+    }
+  };
+
+  const handleDiscardDraft = () => {
+    setShowDiscardConfirm(true);
+  };
+
+  const confirmDiscardDraft = async () => {
+    try {
+      setDiscarding(true);
+      setSelectedComplaints([]);
+      setCustomComplaint('');
+      setHistoryOfIllness('');
+      setPhysicalExam('');
+      setPrimaryDiagnosis('');
+      setIcd11Code('');
+      setDiagnosisComments('');
+      setTreatmentPlan('');
+      setFollowUpDate('');
+      setPrescriptions([]);
+      setLabOrders([]);
+      setRadiologyOrders([]);
+      setOtherServiceOrders([]);
+      setHasActiveDraft(false);
+      setDraftSavedAt(null);
+
+      localStorage.removeItem(`clinic365_consultation_draft_${patientId}`);
+      if (patientId) {
+        try {
+          await api.clearConsultationDraft(patientId);
+        } catch (_) {}
+      }
+      showToast('Consultation draft discarded. Form reset to fresh state.', 'info', 'Draft Discarded');
+      setShowDiscardConfirm(false);
+    } catch (err) {
+      console.error('Error clearing draft:', err);
+      showToast('Error discarding draft. Please try again.', 'danger', 'Error');
+    } finally {
+      setDiscarding(false);
     }
   };
 
@@ -984,16 +1124,18 @@ export default function DoctorConsultationModal({
     }
   };
 
-  // 2. Filter covered radiology charges for real-time fast autocomplete
+  // 2. Filter active radiology charges for real-time fast autocomplete
+  const activeRadiologyTariffList = radiologyTariffMode === 'general' ? generalRadiologyTariffs : coveredRadiologyTariffs;
+
   const filteredCoveredRadiology = useMemo(() => {
     const query = radiologyScanName.trim().toLowerCase();
-    if (!query) return coveredRadiologyTariffs;
-    return coveredRadiologyTariffs.filter(
+    if (!query) return activeRadiologyTariffList;
+    return activeRadiologyTariffList.filter(
       (r) =>
         r.item?.toLowerCase().includes(query) ||
         (r.item_id && r.item_id.toLowerCase().includes(query))
     );
-  }, [coveredRadiologyTariffs, radiologyScanName]);
+  }, [activeRadiologyTariffList, radiologyScanName]);
 
   const handleRadiologyInputChange = (val) => {
     setRadiologyScanName(val);
@@ -1020,7 +1162,13 @@ export default function DoctorConsultationModal({
   const handleSelectCoveredRadiology = (rad) => {
     if (!rad) return;
     setRadiologyScanName(rad.item);
-    setSelectedRadiologyTariff(rad);
+    const isGeneral = radiologyTariffMode === 'general' || rad.is_general || (!rad.sponsor_id && !rad.plan_id);
+    setSelectedRadiologyTariff({
+      ...rad,
+      is_pay_from_purse: isGeneral,
+      payment_source: isGeneral ? 'pay_from_purse' : 'plan_covered',
+      payment_label: isGeneral ? 'Pay from your purse' : (rad.plan_name || 'Covered Plan'),
+    });
     setShowRadiologyDropdown(false);
   };
 
@@ -1446,7 +1594,13 @@ export default function DoctorConsultationModal({
     const matchedTariff =
       scanItem ||
       selectedRadiologyTariff ||
+      activeRadiologyTariffList.find(
+        (r) => r.item?.toLowerCase() === (scanItem?.item || radiologyScanName).trim().toLowerCase()
+      ) ||
       coveredRadiologyTariffs.find(
+        (r) => r.item?.toLowerCase() === (scanItem?.item || radiologyScanName).trim().toLowerCase()
+      ) ||
+      generalRadiologyTariffs.find(
         (r) => r.item?.toLowerCase() === (scanItem?.item || radiologyScanName).trim().toLowerCase()
       );
 
@@ -1464,14 +1618,25 @@ export default function DoctorConsultationModal({
       return;
     }
 
+    const isPayFromPurse = Boolean(
+      selectedRadiologyTariff?.is_pay_from_purse ||
+      radiologyTariffMode === 'general' ||
+      matchedTariff?.is_general ||
+      (!matchedTariff?.sponsor_id && !matchedTariff?.plan_id && matchedTariff)
+    );
+
     const newOrder = {
       id: Date.now(),
       scan: scanName,
       item_id: matchedTariff ? matchedTariff.item_id : null,
       tariff_rate: matchedTariff ? matchedTariff.rate : null,
-      plan_name: matchedTariff ? matchedTariff.plan_name : null,
-      sponsor_name: matchedTariff ? matchedTariff.sponsor_name : null,
-      is_covered: Boolean(matchedTariff),
+      plan_name: isPayFromPurse ? 'General Tariff' : (matchedTariff ? matchedTariff.plan_name : null),
+      sponsor_name: isPayFromPurse ? 'Self-Pay' : (matchedTariff ? matchedTariff.sponsor_name : null),
+      is_covered: !isPayFromPurse && Boolean(matchedTariff),
+      is_pay_from_purse: isPayFromPurse,
+      payment_mode: isPayFromPurse ? 'pay_from_purse' : 'covered',
+      payment_label: isPayFromPurse ? 'Pay from your purse' : (matchedTariff?.plan_name || 'Covered Plan'),
+      comment: isPayFromPurse ? '[Pay from your purse]' : '',
     };
 
     setRadiologyOrders((prev) => [...prev, newOrder]);
@@ -1542,24 +1707,108 @@ export default function DoctorConsultationModal({
   const handleRemoveInvestigation = handleRemoveLabOrder;
 
   const handleSaveConsultation = async (isCompleting = false) => {
-    if (!primaryDiagnosis.trim()) {
-      setDiagnosisError(true);
-      if (activeTab !== 'notes') {
-        setActiveTab('notes');
+    // If completing the consultation, validate compulsory primary diagnosis
+    if (isCompleting) {
+      if (!primaryDiagnosis.trim()) {
+        setDiagnosisError(true);
+        if (activeTab !== 'notes') {
+          setActiveTab('notes');
+        }
+        showToast(
+          'Primary Diagnosis is compulsory to complete consultation! Please select or enter a diagnosis.',
+          'warning',
+          'Diagnosis Compulsory'
+        );
+        if (diagnosisDropdownRef.current) {
+          const input = diagnosisDropdownRef.current.querySelector('input');
+          if (input) input.focus();
+        }
+        return;
       }
-      showToast(
-        'Primary Diagnosis is compulsory! Please select or enter a diagnosis to proceed.',
-        'warning',
-        'Diagnosis Compulsory'
-      );
-      if (diagnosisDropdownRef.current) {
-        const input = diagnosisDropdownRef.current.querySelector('input');
-        if (input) input.focus();
-      }
-      return;
+      setDiagnosisError(false);
     }
-    setDiagnosisError(false);
 
+    // If saving draft, ensure at least one field has been documented
+    if (!isCompleting) {
+      const hasAnyContent =
+        selectedComplaints.length > 0 ||
+        Boolean(customComplaint && customComplaint.trim()) ||
+        Boolean(historyOfIllness && historyOfIllness.trim()) ||
+        Boolean(physicalExam && physicalExam.trim()) ||
+        Boolean(primaryDiagnosis && primaryDiagnosis.trim()) ||
+        Boolean(diagnosisComments && diagnosisComments.trim()) ||
+        Boolean(treatmentPlan && treatmentPlan.trim()) ||
+        Boolean(followUpDate && followUpDate.trim()) ||
+        prescriptions.length > 0 ||
+        labOrders.length > 0 ||
+        radiologyOrders.length > 0 ||
+        otherServiceOrders.length > 0;
+
+      if (!hasAnyContent) {
+        showToast(
+          'Nothing to save in draft. Please document at least one clinical note, complaint, diagnosis, or order.',
+          'warning',
+          'Empty Draft'
+        );
+        return;
+      }
+
+      try {
+        setSaving(true);
+        const draftPayload = {
+          selectedComplaints,
+          customComplaint,
+          historyOfIllness,
+          physicalExam,
+          primaryDiagnosis,
+          icd11Code,
+          diagnosisComments,
+          treatmentPlan,
+          followUpDate,
+          prescriptions,
+          labOrders,
+          radiologyOrders,
+          otherServiceOrders,
+          _savedAt: new Date().toISOString(),
+        };
+
+        // 1. Save to local storage for instant offline recovery
+        if (patientId) {
+          localStorage.setItem(`clinic365_consultation_draft_${patientId}`, JSON.stringify(draftPayload));
+        }
+
+        // 2. Persist to backend database so doctor can resume on any computer/browser
+        await api.saveConsultationDraft({
+          patient: patientId,
+          appointment: appointment?.id || null,
+          draft_data: draftPayload,
+        });
+
+        setHasActiveDraft(true);
+        setDraftSavedAt(new Date().toISOString());
+
+        showToast(
+          `Consultation draft for ${patientName} saved successfully! When you return, you will see everything you documented and continue from there.`,
+          'success',
+          'Draft Saved'
+        );
+
+        if (onConsultationFinished) {
+          onConsultationFinished();
+        }
+
+        onClose();
+        return;
+      } catch (err) {
+        console.error('Error saving consultation draft:', err);
+        showToast(err.response?.data?.detail || err.message || 'Error saving consultation draft', 'danger', 'Draft Error');
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    // Completing consultation (isCompleting === true)
     try {
       setSaving(true);
       const complaintsString = selectedComplaints.join(', ');
@@ -1590,7 +1839,9 @@ export default function DoctorConsultationModal({
         labOrders.length > 0
           ? `LABORATORY ORDERS:\n${labOrders
               .map((l, i) => {
-                const tag = l.is_covered
+                const tag = l.is_pay_from_purse
+                  ? ` [Pay from your purse: ₦${Number(l.tariff_rate || 0).toLocaleString()}]`
+                  : l.is_covered
                   ? ` [Covered: ₦${Number(l.tariff_rate).toLocaleString()} under ${l.plan_name || 'HMO Plan'}]`
                   : ' [Out-of-Pocket]';
                 return `${i + 1}. ${l.test}${l.item_id ? ` (${l.item_id})` : ''}${tag}`;
@@ -1600,7 +1851,9 @@ export default function DoctorConsultationModal({
         radiologyOrders.length > 0
           ? `RADIOLOGY & IMAGING ORDERS:\n${radiologyOrders
               .map((r, i) => {
-                const tag = r.is_covered
+                const tag = r.is_pay_from_purse
+                  ? ` [Pay from your purse: ₦${Number(r.tariff_rate || 0).toLocaleString()}]`
+                  : r.is_covered
                   ? ` [Covered: ₦${Number(r.tariff_rate).toLocaleString()} under ${r.plan_name || 'HMO Plan'}]`
                   : ' [Out-of-Pocket]';
                 return `${i + 1}. ${r.scan}${r.item_id ? ` (${r.item_id})` : ''}${tag}`;
@@ -1686,31 +1939,33 @@ export default function DoctorConsultationModal({
       }
 
       // If completing, also complete the appointment if appointment ID exists
-      if (isCompleting && appointment?.id) {
+      if (appointment?.id) {
         try {
           await api.completeAppointment(appointment.id);
         } catch (_) {}
       }
+
+      // Clean up saved consultation draft on finish
+      try {
+        localStorage.removeItem(`clinic365_consultation_draft_${patientId}`);
+        await api.clearConsultationDraft(patientId);
+      } catch (_) {}
 
       const billMsg = billResult && billResult.total_items
         ? ` (${billResult.total_items} clinical item(s) routed to Billing Queue for cashier)`
         : '';
 
       showToast(
-        isCompleting
-          ? `Doctor Consultation for ${patientName} completed successfully!${billMsg}`
-          : `Consultation clinical notes saved successfully!${billMsg}`,
+        `Doctor Consultation for ${patientName} completed successfully!${billMsg}`,
         'success',
-        isCompleting ? 'Consultation Completed & Routed to Billing' : 'Encounter Saved'
+        'Consultation Completed & Routed to Billing'
       );
 
       if (onConsultationFinished) {
         onConsultationFinished();
       }
 
-      if (isCompleting) {
-        onClose();
-      }
+      onClose();
     } catch (err) {
       console.error('Error saving consultation:', err);
       showToast(err.response?.data?.detail || err.message || 'Error saving consultation', 'danger', 'Save Error');
@@ -1815,6 +2070,24 @@ export default function DoctorConsultationModal({
                   ></span>
                   Active Consultation
                 </span>
+                {hasActiveDraft && (
+                  <span
+                    className="badge shadow-sm d-inline-flex align-items-center"
+                    style={{
+                      backgroundColor: 'rgba(245, 158, 11, 0.25)',
+                      border: '1px solid rgba(245, 158, 11, 0.6)',
+                      color: '#fbbf24',
+                      fontWeight: 600,
+                      fontSize: '0.74rem',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                    }}
+                    title="Work in progress draft loaded"
+                  >
+                    <i className="fas fa-edit mr-1 text-warning"></i>
+                    Draft In Progress
+                  </span>
+                )}
               </div>
 
               <div
@@ -2109,6 +2382,60 @@ export default function DoctorConsultationModal({
             <div className="text-muted small d-inline-flex align-items-center">
               <i className="fas fa-user-nurse text-success mr-1.5"></i>
               <span>Recorded by <strong>{vitals.staff_name || 'Nursing'}</strong> ({vitals.time || 'Today'})</span>
+            </div>
+          </div>
+        )}
+
+        {/* Active Consultation Draft Alert Banner */}
+        {hasActiveDraft && (
+          <div
+            className="px-4 py-2 border-bottom d-flex align-items-center justify-content-between flex-wrap"
+            style={{
+              backgroundColor: '#fffbeb',
+              borderBottom: '1px solid #fde68a',
+              color: '#92400e',
+              fontSize: '0.82rem',
+              gap: '10px',
+            }}
+          >
+            <div className="d-flex align-items-center flex-wrap" style={{ gap: '8px' }}>
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-circle"
+                style={{
+                  width: '26px',
+                  height: '26px',
+                  backgroundColor: '#fef3c7',
+                  border: '1px solid #fcd34d',
+                  color: '#d97706',
+                }}
+              >
+                <i className="fas fa-edit" style={{ fontSize: '0.75rem' }}></i>
+              </span>
+              <span>
+                <strong>Unfinished Consultation Draft Restored:</strong> Continuing previous documentation
+                {draftSavedAt ? (
+                  <>
+                    {' '}&bull; Saved <strong>{new Date(draftSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</strong>
+                  </>
+                ) : ''}.
+                All complaints, notes, diagnoses, prescriptions, and test orders are loaded.
+              </span>
+            </div>
+            <div className="d-flex align-items-center" style={{ gap: '8px' }}>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-danger shadow-none font-weight-bold d-inline-flex align-items-center"
+                style={{
+                  borderRadius: '6px',
+                  fontSize: '0.74rem',
+                  padding: '3px 10px',
+                  backgroundColor: '#ffffff',
+                }}
+                onClick={handleDiscardDraft}
+                title="Discard this draft and clear all fields to start fresh"
+              >
+                <i className="fas fa-trash-alt mr-1"></i> Discard Draft &amp; Start Fresh
+              </button>
             </div>
           </div>
         )}
@@ -4835,7 +5162,7 @@ export default function DoctorConsultationModal({
                             </div>
                             <div className="text-muted" style={{ fontSize: '0.76rem' }}>
                               {loadingCoveredRadiology ? (
-                                <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading covered radiology scans...</span>
+                                <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading radiology scans...</span>
                               ) : coveredRadiologyTariffs.length > 0 ? (
                                 <span>
                                   <i className="fas fa-check-circle text-success mr-1"></i>
@@ -4850,9 +5177,9 @@ export default function DoctorConsultationModal({
                             </div>
                           </div>
                         </div>
-                        {coveredRadiologyTariffs.length > 0 && (
-                          <span className="badge badge-light border font-weight-bold px-2 py-1 small" style={{ color: '#7c3aed' }}>
-                            <i className="fas fa-x-ray mr-1"></i> {coveredRadiologyTariffs.length} Scans Available
+                        {generalRadiologyTariffs.length > 0 && (
+                          <span className="badge badge-warning text-dark font-weight-bold px-2.5 py-1.5 shadow-xs" style={{ fontSize: '0.75rem' }}>
+                            <i className="fas fa-wallet mr-1"></i> {generalRadiologyTariffs.length} General Tariff Scans (Pay from your purse)
                           </span>
                         )}
                       </div>
@@ -4860,23 +5187,63 @@ export default function DoctorConsultationModal({
                       <div className="alert alert-light border py-2 px-3 mb-3 d-flex align-items-center justify-content-between small text-muted">
                         <div>
                           <i className="fas fa-user mr-1 text-secondary"></i>
-                          <strong>Private / Cash Patient:</strong> Standard radiology and scan tariffs apply.
+                          <strong>Private / Cash Patient:</strong> Standard general radiology and scan tariffs apply.
                         </div>
-                        <span className="badge badge-secondary">Private / Cash</span>
+                        <span className="badge badge-success px-2.5 py-1.5 font-weight-bold shadow-xs">
+                          <i className="fas fa-wallet mr-1"></i> General Price ({generalRadiologyTariffs.length || coveredRadiologyTariffs.length})
+                        </span>
                       </div>
                     )}
 
                     {/* Radiology Order Requisition Form */}
                     <div className="p-3 bg-light rounded border mb-3" style={{ borderColor: '#e2e8f0' }}>
-                      <div className="font-weight-bold small text-gray-800 mb-2 d-flex justify-content-between align-items-center">
-                        <span>
-                          <i className="fas fa-plus-circle mr-1.5" style={{ color: '#7c3aed' }}></i> Requisition Radiology Scan / Imaging:
-                        </span>
-                        {currentPlanName && (
-                          <span className="small text-muted">
-                            Tariff Filter: <strong style={{ color: '#7c3aed' }}>{currentPlanName}</strong>
-                          </span>
-                        )}
+                      <div className="font-weight-bold small text-gray-800 mb-2 d-flex justify-content-between align-items-center flex-wrap" style={{ gap: '6px' }}>
+                        <div>
+                          <i className="fas fa-plus-circle mr-1.5" style={{ color: '#7c3aed' }}></i>
+                          <span>Requisition Radiology Scan / Imaging:</span>
+                        </div>
+                        <div>
+                          {isHmoPatient ? (
+                            <div className="btn-group btn-group-sm p-0.5 bg-light border" style={{ borderRadius: '6px' }}>
+                              <button
+                                type="button"
+                                className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
+                                  radiologyTariffMode === 'covered' ? 'text-white shadow-xs' : 'btn-light text-secondary'
+                                }`}
+                                style={{
+                                  borderRadius: '5px',
+                                  fontSize: '0.78rem',
+                                  backgroundColor: radiologyTariffMode === 'covered' ? '#7c3aed' : undefined,
+                                }}
+                                onClick={() => {
+                                  setRadiologyTariffMode('covered');
+                                  setSelectedRadiologyTariff(null);
+                                }}
+                                title="Search scans covered by patient HMO plan (Requires HMO Claim/Approval)"
+                              >
+                                <i className="fas fa-shield-alt mr-1"></i> HMO Covered ({coveredRadiologyTariffs.length})
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
+                                  radiologyTariffMode === 'general' ? 'btn-warning text-dark shadow-xs' : 'btn-light text-secondary'
+                                }`}
+                                style={{ borderRadius: '5px', fontSize: '0.78rem' }}
+                                onClick={() => {
+                                  setRadiologyTariffMode('general');
+                                  setSelectedRadiologyTariff(null);
+                                }}
+                                title="HMO doesn't cover scan? Switch to General Tariff: scan will carry label 'Pay from your purse'"
+                              >
+                                <i className="fas fa-wallet mr-1"></i> Not Covered? Switch to General Tariff &bull; Pay from your purse ({generalRadiologyTariffs.length})
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="badge badge-success px-2.5 py-1.5 font-weight-bold shadow-xs">
+                              <i className="fas fa-wallet mr-1"></i> Private Patient &bull; General Price ({generalRadiologyTariffs.length || coveredRadiologyTariffs.length})
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="position-relative" ref={radiologyDropdownRef}>
@@ -4890,8 +5257,10 @@ export default function DoctorConsultationModal({
                             type="text"
                             className="form-control"
                             placeholder={
-                              currentPlanName
-                                ? `Search radiology scan for ${currentPlanName} (e.g. Chest X-Ray, Pelvic Scan, Abdominal Ultrasound, CT Brain)...`
+                              radiologyTariffMode === 'general'
+                                ? 'Search general radiology scan (Pay from your purse)...'
+                                : currentPlanName
+                                ? `Search covered radiology scan for ${currentPlanName} (e.g. Chest X-Ray, Pelvic Scan, Abdominal Ultrasound, CT Brain)...`
                                 : 'Search or type radiology scan (e.g. Pelvic Ultrasound, Chest X-Ray PA, CT Scan)...'
                             }
                             value={radiologyScanName}
@@ -4928,7 +5297,7 @@ export default function DoctorConsultationModal({
                           </div>
                         </div>
 
-                        {/* Covered Radiology Autocomplete Dropdown */}
+                        {/* Covered / General Radiology Autocomplete Dropdown */}
                         {showRadiologyDropdown && (
                           <div
                             className="dropdown-menu show w-100 shadow-lg p-0"
@@ -4945,13 +5314,18 @@ export default function DoctorConsultationModal({
                           >
                             <div className="p-2 bg-light border-bottom d-flex justify-content-between align-items-center">
                               <span className="small font-weight-bold text-dark">
-                                {currentPlanName ? (
+                                {radiologyTariffMode === 'general' ? (
+                                  <>
+                                    <i className="fas fa-wallet mr-1 text-warning"></i>
+                                    General Tariff (Pay from your purse):
+                                  </>
+                                ) : currentPlanName ? (
                                   <>
                                     <i className="fas fa-shield-alt mr-1" style={{ color: '#7c3aed' }}></i>
                                     Covered Radiology Tariffs for {currentPlanName}:
                                   </>
                                 ) : (
-                                  'Hospital Radiology &amp; Scans:'
+                                  'Hospital Radiology & Scans:'
                                 )}
                               </span>
                               <span className="badge badge-secondary small">
@@ -4983,11 +5357,16 @@ export default function DoctorConsultationModal({
                                       <span className={`font-weight-bold ${selectedRadiologyIndex === idx ? 'text-white' : 'text-dark'}`}>
                                         {rad.item}
                                       </span>
+                                      {(radiologyTariffMode === 'general' || rad.is_general || (!rad.sponsor_id && !rad.plan_id)) && (
+                                        <span className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs" style={{ fontSize: '0.70rem' }}>
+                                          <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                                        </span>
+                                      )}
                                     </div>
                                     <div className={`small ${selectedRadiologyIndex === idx ? 'text-white-50' : 'text-muted'}`}>
                                       {rad.item_id && <span className="mr-2">Code: {rad.item_id}</span>}
                                       {rad.plan_name && (
-                                        <span className="badge badge-secondary mr-1">
+                                        <span className={`badge ${selectedRadiologyIndex === idx ? 'badge-light text-dark' : 'badge-secondary'} mr-1`}>
                                           {rad.plan_name}
                                         </span>
                                       )}
@@ -5006,8 +5385,22 @@ export default function DoctorConsultationModal({
                             ) : (
                               <div className="p-3 text-center">
                                 <div className="text-muted small mb-2">
-                                  No covered radiology scan found matching "<strong>{radiologyScanName}</strong>" for {currentPlanName || 'this patient'}.
+                                  No {radiologyTariffMode === 'general' ? 'general' : 'covered'} radiology scan found matching "<strong>{radiologyScanName}</strong>"
+                                  {radiologyTariffMode === 'covered' && currentPlanName ? ` for ${currentPlanName}` : ''}.
                                 </div>
+                                {radiologyTariffMode === 'covered' && generalRadiologyTariffs.length > 0 && (
+                                  <div className="mb-2">
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-warning"
+                                      onClick={() => {
+                                        setRadiologyTariffMode('general');
+                                      }}
+                                    >
+                                      <i className="fas fa-wallet mr-1"></i> Scan not covered? Switch to <strong>General Tariff (Pay from your purse)</strong>
+                                    </button>
+                                  </div>
+                                )}
                                 {radiologyScanName.trim() && (
                                   <button
                                     type="button"
@@ -5026,12 +5419,18 @@ export default function DoctorConsultationModal({
 
                       {/* Selected Radiology Tariff Pill */}
                       {selectedRadiologyTariff && (
-                        <div className="d-flex align-items-center flex-wrap mt-2 small" style={{ color: '#7c3aed' }}>
-                          <i className="fas fa-check-circle mr-1"></i>
-                          <span>
-                            Selected Scan: <strong>{selectedRadiologyTariff.item}</strong> &bull;
-                            <span className="badge badge-success ml-1 mr-1">₦{Number(selectedRadiologyTariff.rate).toLocaleString()}</span>
-                            ({selectedRadiologyTariff.plan_name || 'Covered Plan'})
+                        <div className="d-flex align-items-center flex-wrap mt-2 small">
+                          {selectedRadiologyTariff.is_pay_from_purse || radiologyTariffMode === 'general' ? (
+                            <span className="badge badge-warning text-dark px-2.5 py-1 font-weight-bold shadow-xs mr-2">
+                              <i className="fas fa-wallet mr-1"></i> Pay from your purse &bull; ₦{Number(selectedRadiologyTariff.rate || 0).toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="badge badge-success px-2.5 py-1 font-weight-bold shadow-xs mr-2">
+                              <i className="fas fa-shield-alt mr-1"></i> HMO Covered &bull; ₦{Number(selectedRadiologyTariff.rate || 0).toLocaleString()} ({selectedRadiologyTariff.plan_name || 'Covered Plan'})
+                            </span>
+                          )}
+                          <span className="text-dark font-weight-bold">
+                            Selected: {selectedRadiologyTariff.item}
                           </span>
                         </div>
                       )}
@@ -5059,6 +5458,11 @@ export default function DoctorConsultationModal({
                                   <div className="d-flex align-items-center">
                                     <i className="fas fa-x-ray mr-2" style={{ color: '#7c3aed' }}></i>
                                     <span className="font-weight-bold text-dark">{r.scan}</span>
+                                    {r.is_pay_from_purse && (
+                                      <span className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs" style={{ fontSize: '0.68rem' }}>
+                                        <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                                      </span>
+                                    )}
                                   </div>
                                 </td>
                                 <td>
@@ -5067,7 +5471,11 @@ export default function DoctorConsultationModal({
                                   </span>
                                 </td>
                                 <td>
-                                  {r.tariff_rate ? (
+                                  {r.is_pay_from_purse ? (
+                                    <span className="badge badge-warning text-dark px-2 py-1 font-weight-bold shadow-xs">
+                                      <i className="fas fa-wallet mr-1"></i> Pay from your purse &bull; ₦{Number(r.tariff_rate || 0).toLocaleString()}
+                                    </span>
+                                  ) : r.tariff_rate ? (
                                     <span className="badge badge-success px-2 py-1 font-weight-bold">
                                       ₦{Number(r.tariff_rate).toLocaleString()} &bull; {r.plan_name || 'Covered Plan'}
                                     </span>
@@ -5706,6 +6114,152 @@ export default function DoctorConsultationModal({
           </div>
         </div>
       </div>
+
+      {/* Professional Standard Discard Draft Alert Modal */}
+      {showDiscardConfirm && (
+        <>
+          <div
+            className="modal-backdrop-custom"
+            style={{
+              zIndex: 1080,
+              backgroundColor: 'rgba(15, 23, 42, 0.72)',
+              backdropFilter: 'blur(3px)',
+            }}
+            onClick={() => !discarding && setShowDiscardConfirm(false)}
+          />
+          <div
+            className="card shadow-2xl modal-custom"
+            style={{
+              zIndex: 1090,
+              maxWidth: '520px',
+              width: '92%',
+              borderRadius: '16px',
+              border: '1px solid #fee2e2',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              margin: 0,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              className="py-3 px-4 d-flex justify-content-between align-items-center"
+              style={{
+                background: 'linear-gradient(135deg, #fff1f2 0%, #fee2e2 100%)',
+                borderBottom: '1px solid #fecaca',
+              }}
+            >
+              <div className="d-flex align-items-center">
+                <div
+                  className="d-flex align-items-center justify-content-center mr-3 shadow-sm"
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '12px',
+                    backgroundColor: '#fee2e2',
+                    color: '#dc2626',
+                    border: '1px solid #fca5a5',
+                    flexShrink: 0,
+                  }}
+                >
+                  <i className="fas fa-trash-alt fa-lg"></i>
+                </div>
+                <div>
+                  <h5 className="mb-0 font-weight-bold" style={{ fontSize: '1.05rem', letterSpacing: '-0.01em', color: '#991b1b' }}>
+                    Discard Consultation Draft?
+                  </h5>
+                  <div className="text-muted small" style={{ fontSize: '0.78rem' }}>
+                    Patient: <strong>{patientName}</strong> ({hospitalNumber})
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="close text-muted"
+                disabled={discarding}
+                onClick={() => setShowDiscardConfirm(false)}
+                style={{ fontSize: '1.4rem', opacity: 0.7 }}
+                title="Cancel"
+              >
+                <span>&times;</span>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="card-body p-4" style={{ backgroundColor: '#ffffff' }}>
+              <div
+                className="p-3 mb-3 rounded border"
+                style={{
+                  backgroundColor: '#fffaf0',
+                  borderColor: '#feebc8',
+                  fontSize: '0.86rem',
+                }}
+              >
+                <div className="d-flex align-items-center text-dark font-weight-bold mb-1">
+                  <i className="fas fa-exclamation-triangle text-warning mr-2"></i>
+                  <span>Warning: Unsaved Draft Data Will Be Lost</span>
+                </div>
+                <div className="text-secondary small" style={{ lineHeight: 1.5 }}>
+                  Are you sure you want to discard this saved consultation draft and clear all fields? This will remove all documented clinical notes, chief complaints, physical findings, diagnoses, prescriptions, and test orders for this session.
+                </div>
+              </div>
+
+              {draftSavedAt && (
+                <div className="text-muted small d-flex align-items-center mb-1">
+                  <i className="fas fa-clock mr-1.5 text-secondary"></i>
+                  <span>
+                    Draft was saved on: <strong className="text-dark">{new Date(draftSavedAt).toLocaleString()}</strong>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div
+              className="px-4 py-3 bg-light border-top d-flex justify-content-end align-items-center"
+              style={{ gap: '10px' }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary px-3 py-2 font-weight-bold"
+                style={{ borderRadius: '8px', fontSize: '0.84rem' }}
+                disabled={discarding}
+                onClick={() => setShowDiscardConfirm(false)}
+              >
+                Cancel &amp; Keep Draft
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-danger px-3 py-2 font-weight-bold shadow-sm d-inline-flex align-items-center"
+                style={{
+                  borderRadius: '8px',
+                  fontSize: '0.84rem',
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  border: 'none',
+                  boxShadow: '0 2px 6px rgba(220, 38, 38, 0.3)',
+                }}
+                disabled={discarding}
+                onClick={confirmDiscardDraft}
+              >
+                {discarding ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin mr-1.5"></i> Discarding...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-trash-alt mr-1.5"></i> Yes, Discard Draft
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

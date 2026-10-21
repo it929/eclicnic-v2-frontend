@@ -187,6 +187,21 @@ export default function TariffPlansView({
     }
   };
 
+  // Load / Initialize General Radiology Prices
+  const handleLoadGeneralRadiologyPrices = async () => {
+    try {
+      setLoadingGeneralPrices(true);
+      const res = await api.loadGeneralRadiologyPrices();
+      showAlert(res.detail || 'General radiology prices loaded successfully!', 'success');
+      await loadRadiologyCharges();
+    } catch (err) {
+      console.error('Error loading general radiology prices:', err);
+      showAlert(err.response?.data?.detail || 'Failed to load general radiology prices.', 'danger');
+    } finally {
+      setLoadingGeneralPrices(false);
+    }
+  };
+
   // Download CSV Template for Radiology & Scan Charges
   const handleDownloadRadiologyTemplate = async (sponsorId = null, planId = null) => {
     try {
@@ -201,7 +216,8 @@ export default function TariffPlansView({
       const url = window.URL.createObjectURL(new Blob([blobData], { type: 'text/csv' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `radiology_tariffs_template.csv`);
+      const filename = sId === 'general' ? 'radiology_tariffs_template_general.csv' : 'radiology_tariffs_template.csv';
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
@@ -892,13 +908,14 @@ export default function TariffPlansView({
           };
     } else if (entityType === 'radiology') {
       title = mode === 'create' ? 'Add Radiology / Scan Investigation Charge' : 'Update Radiology Charge';
+      const isGeneralItem = item && (item.is_general || (!item.sponsor_id && !item.plan_id));
       formData = item
         ? {
             item: item.item,
             item_id: item.item_id,
             rate: item.rate,
-            sponsor_id: item.sponsor_id || '',
-            plan_id: item.plan_id || '',
+            sponsor_id: isGeneralItem ? 'general' : (item.sponsor_id || ''),
+            plan_id: isGeneralItem ? '' : (item.plan_id || ''),
           }
         : {
             item: '',
@@ -985,16 +1002,24 @@ export default function TariffPlansView({
         showAlert(res.detail || 'Laboratory investigation charge saved successfully!');
         loadLabCharges();
       } else if (entityType === 'radiology') {
-        if (!formData.sponsor_id) {
-          showAlert('Please select a Sponsor / HMO for this radiology tariff.', 'warning');
-          return;
+        const isGeneral = formData.sponsor_id === 'general' || !formData.sponsor_id;
+        const payload = {
+          ...formData,
+          sponsor_id: isGeneral ? '' : formData.sponsor_id,
+          plan_id: isGeneral ? '' : formData.plan_id,
+        };
+        if (!isGeneral) {
+          if (!formData.sponsor_id) {
+            showAlert('Please select a Sponsor / HMO for this radiology tariff.', 'warning');
+            return;
+          }
+          if (!formData.plan_id) {
+            showAlert('Please select a Coverage Plan for this radiology tariff.', 'warning');
+            return;
+          }
         }
-        if (!formData.plan_id) {
-          showAlert('Please select a Coverage Plan for this radiology tariff.', 'warning');
-          return;
-        }
-        if (mode === 'create') res = await api.createRadiologyCharge(formData);
-        else res = await api.updateRadiologyCharge(id, formData);
+        if (mode === 'create') res = await api.createRadiologyCharge(payload);
+        else res = await api.updateRadiologyCharge(id, payload);
         showAlert(res.detail || 'Radiology charge saved successfully!');
         loadRadiologyCharges();
       } else if (entityType === 'ward') {
@@ -2378,80 +2403,132 @@ export default function TariffPlansView({
           <div className="card shadow-sm border-0 mb-4" style={{ borderRadius: '12px', overflow: 'hidden' }}>
             {/* Main Card Header */}
             <div className="card-header bg-white py-3 px-4 border-bottom">
-              <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
-                <div className="d-flex align-items-center">
-                  <div
-                    className="mr-3 d-flex align-items-center justify-content-center shadow-sm"
-                    style={{
-                      width: '46px',
-                      height: '46px',
-                      borderRadius: '12px',
-                      background: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)',
-                      color: '#0284c7',
-                      fontSize: '1.25rem',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <i className="fas fa-flask"></i>
-                  </div>
-                  <div>
-                    <div className="d-flex align-items-center flex-wrap" style={{ gap: '8px' }}>
-                      <h5 className="m-0 font-weight-bold text-gray-800" style={{ fontSize: '1.1rem' }}>
-                        Laboratory Investigation Charges
-                      </h5>
-                      <span className="badge badge-light border text-info font-weight-bold px-2 py-1 shadow-sm" style={{ borderRadius: '6px' }}>
-                        {filteredLabCharges.length} {filteredLabCharges.length === 1 ? 'Tariff' : 'Tariffs'}
-                      </span>
+              <div className="row align-items-center">
+                <div className="col-12 col-xl-6 mb-3 mb-xl-0">
+                  <div className="d-flex align-items-center">
+                    <div
+                      className="mr-3 d-flex align-items-center justify-content-center shadow-xs"
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)',
+                        color: '#0284c7',
+                        fontSize: '1.25rem',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fas fa-flask"></i>
                     </div>
-                    <div className="text-muted small mt-1">
-                      Manage diagnostic test tariffs attached to HMO Sponsors, Coverage Plans, and General Out-of-Pocket pricing.
+                    <div>
+                      <div className="d-flex align-items-center flex-wrap" style={{ gap: '8px' }}>
+                        <h5 className="m-0 font-weight-bold text-gray-900" style={{ fontSize: '1.15rem' }}>
+                          Laboratory Investigation Charges
+                        </h5>
+                        <span
+                          className="badge font-weight-bold shadow-xs"
+                          style={{
+                            borderRadius: '6px',
+                            backgroundColor: '#f0f9ff',
+                            color: '#0369a1',
+                            border: '1px solid #bae6fd',
+                            padding: '4px 8px',
+                            fontSize: '0.74rem',
+                          }}
+                        >
+                          {filteredLabCharges.length} {filteredLabCharges.length === 1 ? 'Tariff' : 'Tariffs'}
+                        </span>
+                      </div>
+                      <div className="text-muted small mt-1">
+                        Manage diagnostic test tariffs attached to HMO Sponsors, Coverage Plans, and General Out-of-Pocket pricing.
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Header Action Buttons */}
-                <div className="mt-2 mt-md-0 flex-shrink-0 d-flex flex-wrap align-items-center" style={{ gap: '8px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-success font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={handleLoadGeneralLabPrices}
-                    disabled={loadingGeneralPrices}
-                    title="Initialize baseline hospital laboratory charges for self-pay patients"
-                  >
-                    <i className={`fas ${loadingGeneralPrices ? 'fa-spinner fa-spin' : 'fa-magic'} mr-2 text-success`}></i>
-                    Load General Prices
-                  </button>
+                <div className="col-12 col-xl-6 text-xl-right">
+                  <div className="d-inline-flex flex-wrap align-items-center" style={{ gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm d-inline-flex align-items-center shadow-xs"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        height: '36px',
+                        padding: '0 14px',
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #86efac',
+                        color: '#15803d',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={handleLoadGeneralLabPrices}
+                      disabled={loadingGeneralPrices}
+                      title="Initialize baseline hospital laboratory charges for self-pay patients"
+                    >
+                      <i className={`fas ${loadingGeneralPrices ? 'fa-spinner fa-spin' : 'fa-magic'} mr-1.5 text-success`}></i>
+                      Load General Prices
+                    </button>
 
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-secondary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => handleDownloadLabTemplate()}
-                    disabled={bulkDownloadingTemplate}
-                    title="Download sample CSV template for laboratory investigation tariffs"
-                  >
-                    <i className={`fas ${bulkDownloadingTemplate ? 'fa-spinner fa-spin' : 'fa-download'} mr-2 text-info`}></i>
-                    Download Template
-                  </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm d-inline-flex align-items-center shadow-xs"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        height: '36px',
+                        padding: '0 14px',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        color: '#475569',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={() => handleDownloadLabTemplate()}
+                      disabled={bulkDownloadingTemplate}
+                      title="Download sample CSV template for laboratory investigation tariffs"
+                    >
+                      <i className={`fas ${bulkDownloadingTemplate ? 'fa-spinner fa-spin' : 'fa-download'} mr-1.5 text-info`}></i>
+                      Download Template
+                    </button>
 
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-info font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => openBulkUploadModal('lab')}
-                  >
-                    <i className="fas fa-file-upload mr-2 text-info"></i> Bulk Upload Tariffs
-                  </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm d-inline-flex align-items-center shadow-xs"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        height: '36px',
+                        padding: '0 14px',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        color: '#0369a1',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={() => openBulkUploadModal('lab')}
+                    >
+                      <i className="fas fa-file-upload mr-1.5" style={{ color: '#0284c7' }}></i>
+                      Bulk Upload Tariffs
+                    </button>
 
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => openModal('lab', 'create')}
-                  >
-                    <i className="fas fa-plus-circle mr-2"></i> Add Lab Charge
-                  </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm font-weight-bold d-inline-flex align-items-center shadow-sm text-white"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        height: '36px',
+                        padding: '0 16px',
+                        background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
+                        border: 'none',
+                        boxShadow: '0 2px 4px rgba(2, 132, 199, 0.25)',
+                      }}
+                      onClick={() => openModal('lab', 'create')}
+                    >
+                      <i className="fas fa-plus-circle mr-1.5"></i> Add Lab Charge
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2893,9 +2970,11 @@ export default function TariffPlansView({
             spCode.includes(term) ||
             plName.includes(term);
 
-          const matchesSponsor = radiologySponsorFilter
-            ? String(item.sponsor_id || item.sponsor) === String(radiologySponsorFilter)
-            : true;
+          const matchesSponsor = radiologySponsorFilter === 'general'
+            ? (item.is_general || (!item.sponsor_id && !item.plan_id))
+            : (radiologySponsorFilter
+                ? String(item.sponsor_id || item.sponsor) === String(radiologySponsorFilter)
+                : true);
 
           const matchesPlan = radiologyPlanFilter
             ? String(item.plan_id || item.plan) === String(radiologyPlanFilter)
@@ -2912,68 +2991,132 @@ export default function TariffPlansView({
           <div className="card shadow-sm border-0 mb-4" style={{ borderRadius: '12px', overflow: 'hidden' }}>
             {/* Header with Title and Quick Actions */}
             <div className="card-header bg-white py-3 px-4 border-bottom">
-              <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
-                <div className="d-flex align-items-center mb-2 mb-md-0">
-                  <div
-                    className="mr-3 d-flex align-items-center justify-content-center shadow-xs"
-                    style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%)',
-                      color: '#6366f1',
-                      fontSize: '1.25rem',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <i className="fas fa-x-ray"></i>
-                  </div>
-                  <div>
-                    <div className="d-flex align-items-center flex-wrap" style={{ gap: '8px' }}>
-                      <h5 className="m-0 font-weight-bold text-gray-800" style={{ fontSize: '1.1rem' }}>
-                        Radiology &amp; Scan Charges
-                      </h5>
-                      <span className="badge badge-light border text-primary font-weight-bold px-2 py-1 shadow-sm" style={{ borderRadius: '6px' }}>
-                        {filteredRadiologyCharges.length} {filteredRadiologyCharges.length === 1 ? 'Tariff' : 'Tariffs'}
-                      </span>
+              <div className="row align-items-center">
+                <div className="col-12 col-xl-6 mb-3 mb-xl-0">
+                  <div className="d-flex align-items-center">
+                    <div
+                      className="mr-3 d-flex align-items-center justify-content-center shadow-xs"
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%)',
+                        color: '#7c3aed',
+                        fontSize: '1.25rem',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fas fa-x-ray"></i>
                     </div>
-                    <div className="text-muted small mt-1">
-                      Manage X-Ray, Ultrasound, CT Scan, and MRI investigation tariffs attached to HMO Sponsors and Plans for clinical orders.
+                    <div>
+                      <div className="d-flex align-items-center flex-wrap" style={{ gap: '8px' }}>
+                        <h5 className="m-0 font-weight-bold text-gray-900" style={{ fontSize: '1.15rem' }}>
+                          Radiology &amp; Scan Charges
+                        </h5>
+                        <span
+                          className="badge font-weight-bold shadow-xs"
+                          style={{
+                            borderRadius: '6px',
+                            backgroundColor: '#f5f3ff',
+                            color: '#6d28d9',
+                            border: '1px solid #ddd6fe',
+                            padding: '4px 8px',
+                            fontSize: '0.74rem',
+                          }}
+                        >
+                          {filteredRadiologyCharges.length} {filteredRadiologyCharges.length === 1 ? 'Tariff' : 'Tariffs'}
+                        </span>
+                      </div>
+                      <div className="text-muted small mt-1">
+                        Manage X-Ray, Ultrasound, CT Scan, and MRI tariffs for HMO Sponsors, Plans, and General Out-of-Pocket.
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Header Action Buttons */}
-                <div className="mt-2 mt-md-0 flex-shrink-0 d-flex flex-wrap align-items-center" style={{ gap: '8px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-secondary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => handleDownloadRadiologyTemplate()}
-                    disabled={bulkDownloadingTemplate}
-                    title="Download sample CSV template for radiology tariffs"
-                  >
-                    <i className={`fas ${bulkDownloadingTemplate ? 'fa-spinner fa-spin' : 'fa-download'} mr-2 text-primary`}></i>
-                    Download Template
-                  </button>
+                <div className="col-12 col-xl-6 text-xl-right">
+                  <div className="d-inline-flex flex-wrap align-items-center" style={{ gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm d-inline-flex align-items-center shadow-xs"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        height: '36px',
+                        padding: '0 14px',
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #86efac',
+                        color: '#15803d',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={handleLoadGeneralRadiologyPrices}
+                      disabled={loadingGeneralPrices}
+                      title="Initialize baseline hospital radiology & scan charges for self-pay patients"
+                    >
+                      <i className={`fas ${loadingGeneralPrices ? 'fa-spinner fa-spin' : 'fa-magic'} mr-1.5 text-success`}></i>
+                      Load General Prices
+                    </button>
 
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-primary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2 bg-white"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => openBulkUploadModal('radiology')}
-                  >
-                    <i className="fas fa-file-upload mr-2 text-primary"></i> Bulk Upload Tariffs
-                  </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm d-inline-flex align-items-center shadow-xs"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        height: '36px',
+                        padding: '0 14px',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        color: '#475569',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={() => handleDownloadRadiologyTemplate()}
+                      disabled={bulkDownloadingTemplate}
+                      title="Download sample CSV template for radiology tariffs"
+                    >
+                      <i className={`fas ${bulkDownloadingTemplate ? 'fa-spinner fa-spin' : 'fa-download'} mr-1.5 text-primary`}></i>
+                      Download Template
+                    </button>
 
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-2"
-                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
-                    onClick={() => openModal('radiology', 'create')}
-                  >
-                    <i className="fas fa-plus-circle mr-2"></i> Add Radiology Charge
-                  </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm d-inline-flex align-items-center shadow-xs"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        height: '36px',
+                        padding: '0 14px',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        color: '#4338ca',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={() => openBulkUploadModal('radiology')}
+                    >
+                      <i className="fas fa-file-upload mr-1.5" style={{ color: '#6366f1' }}></i>
+                      Bulk Upload Tariffs
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-sm font-weight-bold d-inline-flex align-items-center shadow-sm text-white"
+                      style={{
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        height: '36px',
+                        padding: '0 16px',
+                        background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+                        border: 'none',
+                        boxShadow: '0 2px 4px rgba(124, 58, 237, 0.25)',
+                      }}
+                      onClick={() => openModal('radiology', 'create')}
+                    >
+                      <i className="fas fa-plus-circle mr-1.5"></i> Add Radiology Charge
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3030,6 +3173,7 @@ export default function TariffPlansView({
                       style={{ borderRadius: '0 6px 6px 0' }}
                     >
                       <option value="">All Sponsors / HMOs ({sponsors.length})</option>
+                      <option value="general">⭐ General / Out-of-Pocket (Self Pay - No HMO)</option>
                       {sponsors.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name} {s.code ? `(${s.code})` : ''}
@@ -3099,18 +3243,33 @@ export default function TariffPlansView({
               <div className="bg-light py-2 px-4 border-bottom d-flex align-items-center flex-wrap" style={{ gap: '6px' }}>
                 <span className="small text-muted font-weight-bold mr-1">Active Filters:</span>
                 {radiologySponsorFilter && (
-                  <span className="badge badge-primary px-2.5 py-1 font-weight-normal shadow-sm d-inline-flex align-items-center" style={{ borderRadius: '12px' }}>
-                    <i className="fas fa-shield-alt mr-1"></i>
-                    Sponsor: {activeRadSponsorObj?.name || 'Selected'}
-                    <i
-                      className="fas fa-times ml-1.5 cursor-pointer"
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => {
-                        setRadiologySponsorFilter('');
-                        setRadiologyPlanFilter('');
-                      }}
-                    ></i>
-                  </span>
+                  radiologySponsorFilter === 'general' ? (
+                    <span className="badge badge-warning text-dark px-2.5 py-1 font-weight-bold shadow-sm d-inline-flex align-items-center" style={{ borderRadius: '12px' }}>
+                      <i className="fas fa-star text-warning mr-1"></i>
+                      General / Out-of-Pocket (Self Pay)
+                      <i
+                        className="fas fa-times ml-1.5 cursor-pointer"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          setRadiologySponsorFilter('');
+                          setRadiologyPlanFilter('');
+                        }}
+                      ></i>
+                    </span>
+                  ) : (
+                    <span className="badge badge-primary px-2.5 py-1 font-weight-normal shadow-sm d-inline-flex align-items-center" style={{ borderRadius: '12px' }}>
+                      <i className="fas fa-shield-alt mr-1"></i>
+                      Sponsor: {activeRadSponsorObj?.name || 'Selected'}
+                      <i
+                        className="fas fa-times ml-1.5 cursor-pointer"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          setRadiologySponsorFilter('');
+                          setRadiologyPlanFilter('');
+                        }}
+                      ></i>
+                    </span>
+                  )
                 )}
                 {radiologyPlanFilter && (
                   <span className="badge badge-info px-2.5 py-1 font-weight-normal shadow-sm d-inline-flex align-items-center" style={{ borderRadius: '12px' }}>
@@ -3198,7 +3357,25 @@ export default function TariffPlansView({
                           </div>
                         </td>
                         <td className="align-middle">
-                          {item.sponsor_name && item.sponsor_name !== 'General / Self' ? (
+                          {item.is_general || (!item.sponsor_id && !item.plan_id) || item.sponsor_name === 'General / Self' ? (
+                            <div className="d-inline-flex flex-column align-items-start">
+                              <span
+                                className="badge px-2.5 py-1 font-weight-bold shadow-xs"
+                                style={{
+                                  backgroundColor: '#ecfdf5',
+                                  color: '#065f46',
+                                  border: '1px solid #a7f3d0',
+                                  borderRadius: '6px',
+                                  fontSize: '0.78rem',
+                                }}
+                              >
+                                <i className="fas fa-star mr-1 text-warning"></i> General / Out-of-Pocket
+                              </span>
+                              <span className="badge badge-light border text-success mt-1" style={{ fontSize: '0.70rem' }}>
+                                <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                              </span>
+                            </div>
+                          ) : item.sponsor_name && item.sponsor_name !== 'General / Self' ? (
                             <div className="d-inline-flex flex-column align-items-start">
                               <div className="d-flex align-items-center flex-wrap" style={{ gap: '6px' }}>
                                 {item.sponsor_code && (
@@ -3241,20 +3418,36 @@ export default function TariffPlansView({
                           )}
                         </td>
                         <td className="align-middle">
-                          <span
-                            className="badge px-2.5 py-1 font-weight-bold shadow-xs d-inline-flex align-items-center"
-                            style={{
-                              backgroundColor: '#ede9fe',
-                              color: '#6d28d9',
-                              border: '1px solid #ddd6fe',
-                              borderRadius: '6px',
-                              fontSize: '0.82rem',
-                              letterSpacing: '0.01em',
-                            }}
-                          >
-                            <i className="fas fa-layer-group mr-1.5" style={{ fontSize: '0.75rem', opacity: 0.85 }}></i>
-                            {item.plan_name || 'All Covered Plans'}
-                          </span>
+                          {item.is_general || (!item.sponsor_id && !item.plan_id) ? (
+                            <span
+                              className="badge px-2.5 py-1 font-weight-bold shadow-xs d-inline-flex align-items-center"
+                              style={{
+                                backgroundColor: '#ecfdf5',
+                                color: '#047857',
+                                border: '1px solid #a7f3d0',
+                                borderRadius: '6px',
+                                fontSize: '0.80rem',
+                              }}
+                            >
+                              <i className="fas fa-wallet mr-1.5" style={{ fontSize: '0.75rem' }}></i>
+                              General Price (Pay from purse)
+                            </span>
+                          ) : (
+                            <span
+                              className="badge px-2.5 py-1 font-weight-bold shadow-xs d-inline-flex align-items-center"
+                              style={{
+                                backgroundColor: '#ede9fe',
+                                color: '#6d28d9',
+                                border: '1px solid #ddd6fe',
+                                borderRadius: '6px',
+                                fontSize: '0.82rem',
+                                letterSpacing: '0.01em',
+                              }}
+                            >
+                              <i className="fas fa-layer-group mr-1.5" style={{ fontSize: '0.75rem', opacity: 0.85 }}></i>
+                              {item.plan_name || 'All Covered Plans'}
+                            </span>
+                          )}
                         </td>
                         <td className="align-middle">
                           <div className="d-inline-flex flex-column">
@@ -4810,18 +5003,22 @@ export default function TariffPlansView({
                           onChange={(e) => {
                             const newSponsorId = e.target.value;
                             const matchingPlans = plans.filter((p) => String(p.sponsor) === String(newSponsorId));
+                            const resetPlan = matchingPlans.some((p) => String(p.id) === String(modalState.formData.plan_id))
+                              ? modalState.formData.plan_id
+                              : (matchingPlans.length > 0 ? matchingPlans[0].id : '');
                             setModalState({
                               ...modalState,
                               formData: {
                                 ...modalState.formData,
                                 sponsor_id: newSponsorId,
-                                plan_id: matchingPlans.length > 0 ? matchingPlans[0].id : '',
+                                plan_id: newSponsorId === 'general' ? '' : resetPlan,
                               },
                             });
                           }}
                           required
                         >
                           <option value="">-- Select Sponsor / HMO --</option>
+                          <option value="general">⭐ General / Out-of-Pocket (Self Pay - No HMO)</option>
                           {sponsors.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name} {s.code ? `(${s.code})` : ''}
@@ -4829,47 +5026,59 @@ export default function TariffPlansView({
                           ))}
                         </select>
                         <small className="form-text text-muted">
-                          Select the HMO or corporate sponsor who covers this radiology and scan tariff rate.
+                          Select the HMO or corporate sponsor who covers this radiology rate, or select General / Out-of-Pocket.
                         </small>
                       </div>
 
-                      {/* Coverage Plan Selection */}
-                      <div className="form-group mb-3">
-                        <label className="small font-weight-bold text-dark d-flex justify-content-between">
-                          <span>
-                            Sponsor Coverage Plan <span className="text-danger">*</span>
-                          </span>
-                          <span className="text-muted" style={{ fontSize: '0.72rem' }}>e.g. GOLD, SILVER, BRONZE</span>
-                        </label>
-                        <select
-                          className="form-control"
-                          value={modalState.formData.plan_id || ''}
-                          onChange={(e) =>
-                            setModalState({
-                              ...modalState,
-                              formData: { ...modalState.formData, plan_id: e.target.value },
-                            })
-                          }
-                          required
+                      {/* Coverage Plan Selection or General Info Notice */}
+                      {modalState.formData.sponsor_id === 'general' ? (
+                        <div
+                          className="alert alert-info py-2.5 px-3 small mb-3 border-0 d-flex align-items-center"
+                          style={{ borderRadius: '8px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}
                         >
-                          <option value="">
-                            {modalState.formData.sponsor_id
-                              ? '-- Select Coverage Plan --'
-                              : '-- Select a Sponsor first --'}
-                          </option>
-                          {(modalState.formData.sponsor_id
-                            ? plans.filter((p) => String(p.sponsor) === String(modalState.formData.sponsor_id))
-                            : plans
-                          ).map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.plan} {p.code ? `(${p.code})` : ''}
+                          <i className="fas fa-info-circle mr-2 text-success" style={{ fontSize: '1rem' }}></i>
+                          <div>
+                            <strong>General Tariff (Pay from your purse):</strong> Baseline hospital rate for self-pay patients and when an HMO patient's plan does not cover this scan / radiology procedure.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="form-group mb-3">
+                          <label className="small font-weight-bold text-dark d-flex justify-content-between">
+                            <span>
+                              Sponsor Coverage Plan <span className="text-danger">*</span>
+                            </span>
+                            <span className="text-muted" style={{ fontSize: '0.72rem' }}>e.g. GOLD, SILVER, BRONZE</span>
+                          </label>
+                          <select
+                            className="form-control"
+                            value={modalState.formData.plan_id || ''}
+                            onChange={(e) =>
+                              setModalState({
+                                ...modalState,
+                                formData: { ...modalState.formData, plan_id: e.target.value },
+                              })
+                            }
+                            required
+                          >
+                            <option value="">
+                              {modalState.formData.sponsor_id
+                                ? '-- Select Coverage Plan --'
+                                : '-- Select a Sponsor first --'}
                             </option>
-                          ))}
-                        </select>
-                        <small className="form-text text-muted">
-                          Select the specific plan that qualifies for this scan / radiology procedure fee.
-                        </small>
-                      </div>
+                            {(modalState.formData.sponsor_id
+                              ? plans.filter((p) => String(p.sponsor) === String(modalState.formData.sponsor_id))
+                              : plans
+                            ).map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.plan} {p.code ? `(${p.code})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <small className="form-text text-muted">
+                            Select the specific plan that qualifies for this scan / radiology procedure fee.
+                          </small>
+                        </div>
+                      )}
 
                       <div className="form-group mb-3">
                         <label className="small font-weight-bold text-dark">
