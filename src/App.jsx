@@ -29,6 +29,7 @@ import api from './services/api';
 import {
   normalizeDepartmentKey,
   getDefaultTabForDepartment,
+  getDepartmentLanding,
   AVAILABLE_MODULES,
   getDefaultModulesForDepartment,
 } from './utils/departmentUtils';
@@ -64,7 +65,7 @@ export default function App() {
       const isLoggedOut = localStorage.getItem('clinic365_logged_out') === 'true';
       if (isLoggedOut) return 'dashboard';
       const deptKey = normalizeDepartmentKey(savedDept);
-      return getDefaultTabForDepartment(deptKey, savedDept);
+      return getDepartmentLanding(deptKey, savedDept).tab;
     } catch {
       return 'dashboard';
     }
@@ -77,6 +78,16 @@ export default function App() {
   const [inventorySubmodule, setInventorySubmodule] = useState('view');
   const [reportingCategory, setReportingCategory] = useState('ambulatory');
   const [reportingSubReport, setReportingSubReport] = useState('patients_reg');
+  const [billingSubMenu, setBillingSubMenu] = useState(() => {
+    try {
+      const savedDept = localStorage.getItem('clinic365_dept') || '';
+      const deptKey = normalizeDepartmentKey(savedDept);
+      const landing = getDepartmentLanding(deptKey, savedDept);
+      return landing.tab === 'billings' ? (landing.subTab || 'unprocessed') : 'unprocessed';
+    } catch {
+      return 'unprocessed';
+    }
+  });
   const [selectedDepartment, setSelectedDepartment] = useState(() => {
     return localStorage.getItem('selectedDepartment') || 'frontdesk';
   });
@@ -97,8 +108,26 @@ export default function App() {
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [appointmentsFilter, setAppointmentsFilter] = useState('today');
-  const [patientInitialFilter, setPatientInitialFilter] = useState('all');
+  const [appointmentsFilter, setAppointmentsFilter] = useState(() => {
+    try {
+      const savedDept = localStorage.getItem('clinic365_dept') || '';
+      const deptKey = normalizeDepartmentKey(savedDept);
+      const landing = getDepartmentLanding(deptKey, savedDept);
+      return landing.tab === 'appointments' ? (landing.subTab || 'today') : 'today';
+    } catch {
+      return 'today';
+    }
+  });
+  const [patientInitialFilter, setPatientInitialFilter] = useState(() => {
+    try {
+      const savedDept = localStorage.getItem('clinic365_dept') || '';
+      const deptKey = normalizeDepartmentKey(savedDept);
+      const landing = getDepartmentLanding(deptKey, savedDept);
+      return landing.tab === 'patients' ? (landing.subTab || 'all') : 'all';
+    } catch {
+      return 'all';
+    }
+  });
   const [isScheduleAppointmentModalOpen, setIsScheduleAppointmentModalOpen] = useState(false);
   const [patientForAppointment, setPatientForAppointment] = useState(null);
   const [patientsForAppointment, setPatientsForAppointment] = useState([]);
@@ -240,8 +269,11 @@ export default function App() {
     if (resolved.tab === 'patients') {
       setPatientInitialFilter(resolved.subTab || 'all');
     }
-    if (resolved.tab === 'appointments' && resolved.subTab) {
-      setAppointmentsFilter(resolved.subTab);
+    if (resolved.tab === 'appointments') {
+      setAppointmentsFilter(resolved.subTab || 'today');
+    }
+    if (resolved.tab === 'billings') {
+      setBillingSubMenu(resolved.subTab || 'unprocessed');
     }
     if (resolved.tab === 'profile' && resolved.subTab) {
       setProfileSubTab(resolved.subTab);
@@ -282,6 +314,21 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHash);
   }, [navigateToRoute]);
 
+  // On initial load without hash, sync URL hash with landing page
+  useEffect(() => {
+    if (isAuthenticated) {
+      const hash = window.location.hash;
+      if (!hash || hash === '#') {
+        const savedDept = localStorage.getItem('clinic365_dept') || currentRole || 'Admin';
+        const deptKey = normalizeDepartmentKey(savedDept);
+        const landing = getDepartmentLanding(deptKey, savedDept);
+        if (landing?.route) {
+          window.location.hash = landing.route;
+        }
+      }
+    }
+  }, [isAuthenticated, currentRole]);
+
   const handleLogin = async (username, password) => {
     const res = await api.login(username, password);
     if (res?.user) {
@@ -306,9 +353,23 @@ export default function App() {
       localStorage.setItem('selectedDepartment', deptKey);
       localStorage.setItem('clinic365_dept', userDept);
 
-      // Route directly to the staff's departmental module (e.g. Front Desk -> 'patients', Nursing -> 'queues')
-      const targetTab = getDefaultTabForDepartment(deptKey, userDept);
-      setActiveTab(targetTab);
+      // Route directly to the department's dedicated landing page:
+      // Front Desk -> patients/all
+      // Nursing / Clinical -> appointments/today
+      // Billings -> billings/unprocessed
+      // Admin / CMD -> dashboard
+      const landing = getDepartmentLanding(deptKey, userDept);
+      setActiveTab(landing.tab);
+      if (landing.tab === 'patients') {
+        setPatientInitialFilter(landing.subTab || 'all');
+      } else if (landing.tab === 'appointments') {
+        setAppointmentsFilter(landing.subTab || 'today');
+      } else if (landing.tab === 'billings') {
+        setBillingSubMenu(landing.subTab || 'unprocessed');
+      }
+      if (landing.route) {
+        window.location.hash = landing.route;
+      }
     }
     localStorage.removeItem('clinic365_logged_out');
     setIsAuthenticated(true);
@@ -326,6 +387,7 @@ export default function App() {
     setIsAuthenticated(false);
     setIsLoginModalOpen(false);
     setActiveTab('dashboard');
+    window.location.hash = '';
   };
 
   if (!isAuthenticated || !user) {
@@ -422,6 +484,12 @@ export default function App() {
           if (tab === 'patients') {
             setPatientInitialFilter(subTab || 'all');
           }
+          if (tab === 'appointments') {
+            setAppointmentsFilter(subTab || 'today');
+          }
+          if (tab === 'billings') {
+            setBillingSubMenu(subTab || 'unprocessed');
+          }
           if (tab === 'profile' && subTab) setProfileSubTab(subTab);
           if (tab === 'taskmanager') {
             if (subTab) setTaskSubmodule(subTab);
@@ -433,9 +501,6 @@ export default function App() {
           }
           if (tab === 'inventory') {
             if (subTab) setInventorySubmodule(subTab);
-          }
-          if (tab === 'appointments') {
-            if (subTab) setAppointmentsFilter(subTab);
           }
           if (tab === 'reporting') {
             if (subTab) setReportingCategory(subTab);
@@ -608,6 +673,7 @@ export default function App() {
                 <BillingsView
                   currentUser={user}
                   onOpenNewPatient={handleOpenNewPatient}
+                  initialSubMenu={billingSubMenu}
                 />
               )}
 

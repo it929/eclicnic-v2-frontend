@@ -40,6 +40,12 @@ export default function TariffPlansView({
   const [importingSponsors, setImportingSponsors] = useState(false);
   const [sponsorSaving, setSponsorSaving] = useState(false);
 
+  // Categories state
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryForm, setCategoryForm] = useState({ category: '' });
+  const [categorySaving, setCategorySaving] = useState(false);
+
   // Plans under Sponsors state
   const [plans, setPlans] = useState([]);
   const [planModalOpen, setPlanModalOpen] = useState(false);
@@ -561,6 +567,8 @@ export default function TariffPlansView({
       loadSponsors();
     } else if (activeSubmodule === 'plans') {
       loadPlans();
+    } else if (activeSubmodule === 'categories') {
+      loadCategories();
     } else if (activeSubmodule === 'service') {
       if (activeSubSubmodule === 'reg_fees') loadRegFees();
       else if (activeSubSubmodule === 'lab_charges') loadLabCharges();
@@ -592,6 +600,8 @@ export default function TariffPlansView({
       loadSponsors();
     } else if (activeSubmodule === 'plans') {
       loadPlans();
+    } else if (activeSubmodule === 'categories') {
+      loadCategories();
     } else if (activeSubmodule === 'service') {
       if (activeSubSubmodule === 'reg_fees') loadRegFees();
       else if (activeSubSubmodule === 'lab_charges') loadLabCharges();
@@ -676,6 +686,7 @@ export default function TariffPlansView({
     let typeLabel = 'Item';
     if (type === 'sponsor') typeLabel = 'Sponsor';
     else if (type === 'plan') typeLabel = 'Tariff Plan';
+    else if (type === 'category') typeLabel = 'Billing Category';
     else if (type === 'reg_fee') typeLabel = 'Registration Fee';
     else if (type === 'lab') typeLabel = 'Laboratory Test Charge';
     else if (type === 'radiology') typeLabel = 'Radiology Test Charge';
@@ -721,6 +732,10 @@ export default function TariffPlansView({
         await api.deletePlan(id);
         showAlert(`Plan "${name}" removed successfully.`);
         loadPlans();
+      } else if (type === 'category') {
+        await api.deleteCategory(id);
+        showAlert(`Category "${name}" removed successfully.`);
+        loadCategories();
       } else if (type === 'reg_fee') {
         const res = await api.deleteRegistrationFee(id);
         showAlert(res.detail || 'Plan deleted.');
@@ -854,6 +869,81 @@ export default function TariffPlansView({
 
   const handleDeletePlan = (id, name) => {
     confirmDelete('plan', id, name);
+  };
+
+  // ========================================================
+  // Category Modal Handlers (Create & Edit & Delete)
+  // ========================================================
+  const loadCategories = async () => {
+    try {
+      setLoading(true);
+      const res = await api.getCategories();
+      setCategories(Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error(err);
+      showAlert('Failed to load categories.', 'danger');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openCategoryModal = (mode = 'create', item = null) => {
+    if (mode === 'edit' && item) {
+      setEditingCategory(item);
+      setCategoryForm({
+        category: item.category || '',
+      });
+    } else {
+      setEditingCategory(null);
+      setCategoryForm({
+        category: '',
+      });
+    }
+    setCategoryModalOpen(true);
+  };
+
+  const closeCategoryModal = () => {
+    setCategoryModalOpen(false);
+    setEditingCategory(null);
+    setCategoryForm({ category: '' });
+  };
+
+  const handleSaveCategory = async (e) => {
+    if (e) e.preventDefault();
+    if (!categoryForm.category.trim()) {
+      showAlert('Category name is required (e.g. Corporate Retainer, Family Retainer, NHIS, Private, HMO).', 'warning');
+      return;
+    }
+    try {
+      setCategorySaving(true);
+      const payload = {
+        category: categoryForm.category.trim(),
+      };
+      let savedCat = null;
+      if (editingCategory) {
+        savedCat = await api.updateCategory(editingCategory.id, payload);
+        showAlert(`Category "${payload.category}" updated successfully.`);
+      } else {
+        savedCat = await api.createCategory(payload);
+        showAlert(`Category "${payload.category}" created successfully.`);
+      }
+      closeCategoryModal();
+      await loadCategories();
+      if (savedCat?.id) {
+        setSponsorForm((prev) => ({ ...prev, category: savedCat.id }));
+        setPlanForm((prev) => ({ ...prev, category: savedCat.id }));
+      }
+    } catch (err) {
+      console.error(err);
+      const detail = err.response?.data?.category?.[0] || err.response?.data?.detail || 'Failed to save category.';
+      showAlert(detail, 'danger');
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleDeleteCategory = (cat) => {
+    confirmDelete('category', cat.id, cat.category);
   };
 
 
@@ -1095,6 +1185,11 @@ export default function TariffPlansView({
     return matchesSearch && matchesSponsor;
   });
 
+  const filteredCategories = categories.filter((item) => {
+    const term = searchTerm.toLowerCase();
+    return (item.category || '').toLowerCase().includes(term);
+  });
+
   return (
     <div className="container-fluid py-4">
       {/* Alert Banner */}
@@ -1150,6 +1245,10 @@ export default function TariffPlansView({
                 <li className="text-capitalize">
                   {activeSubmodule === 'sponsors'
                     ? 'Sponsors'
+                    : activeSubmodule === 'plans'
+                    ? 'Plans'
+                    : activeSubmodule === 'categories'
+                    ? 'Categories'
                     : activeSubmodule === 'service'
                     ? 'Service Tariffs'
                     : activeSubmodule === 'product'
@@ -1229,6 +1328,13 @@ export default function TariffPlansView({
                 icon: 'fas fa-layer-group',
                 count: plans.length,
                 defaultSub: 'manage_plans',
+              },
+              {
+                id: 'categories',
+                label: 'Categories',
+                icon: 'fas fa-tags',
+                count: categories.length,
+                defaultSub: 'manage_categories',
               },
               {
                 id: 'service',
@@ -1521,6 +1627,71 @@ export default function TariffPlansView({
             </div>
           )}
 
+          {/* Categories Sub-navigation */}
+          {activeSubmodule === 'categories' && (
+            <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between w-100">
+              <div className="d-flex flex-wrap align-items-center" style={{ gap: '8px' }}>
+                <div
+                  className="d-inline-flex align-items-center px-3 py-1"
+                  style={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '6px',
+                    height: '32px',
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+                  }}
+                >
+                  <i className="fas fa-tags text-primary" style={{ marginRight: '8px', fontSize: '0.88rem' }}></i>
+                  <span className="font-weight-bold" style={{ color: '#0f172a', fontSize: '0.82rem' }}>
+                    Billing &amp; Coverage Categories
+                  </span>
+                  <span
+                    className="badge font-weight-bold"
+                    style={{
+                      marginLeft: '8px',
+                      backgroundColor: '#eff6ff',
+                      color: '#1d4ed8',
+                      border: '1px solid #dbeafe',
+                      borderRadius: '999px',
+                      fontSize: '0.70rem',
+                      padding: '2px 7px',
+                    }}
+                  >
+                    {categories.length}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm text-muted font-weight-bold d-inline-flex align-items-center"
+                  style={{ fontSize: '0.80rem', background: 'transparent', border: 'none', height: '32px' }}
+                  onClick={() => {
+                    setActiveSubmodule('sponsors');
+                    setActiveSubSubmodule('manage_sponsors');
+                  }}
+                >
+                  <i className="fas fa-building text-primary" style={{ marginRight: '6px' }}></i>
+                  View Sponsors ({sponsors.length}) &rarr;
+                </button>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary font-weight-bold d-inline-flex align-items-center shadow-xs px-3"
+                  style={{
+                    borderRadius: '6px',
+                    fontSize: '0.80rem',
+                    height: '32px',
+                    backgroundColor: '#2563eb',
+                    borderColor: '#1d4ed8',
+                  }}
+                  onClick={() => openCategoryModal('create')}
+                >
+                  <i className="fas fa-plus-circle" style={{ marginRight: '6px' }}></i> Add New Category
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Product Tariffs Sub-navigation */}
           {activeSubmodule === 'product' && (
             <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between w-100">
@@ -1783,6 +1954,16 @@ export default function TariffPlansView({
                   ))}
                 </select>
 
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary font-weight-bold mr-2 d-inline-flex align-items-center"
+                  style={{ borderRadius: '6px' }}
+                  onClick={() => openCategoryModal('create')}
+                  title="Create new billing category"
+                >
+                  <i className="fas fa-plus mr-1"></i> Category
+                </button>
+
                 <input
                   type="text"
                   className="form-control form-control-sm mr-2"
@@ -2020,6 +2201,16 @@ export default function TariffPlansView({
                 />
 
                 <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary font-weight-bold mr-2 d-inline-flex align-items-center"
+                  style={{ borderRadius: '6px' }}
+                  onClick={() => openCategoryModal('create')}
+                  title="Create new billing category"
+                >
+                  <i className="fas fa-plus mr-1"></i> Category
+                </button>
+
+                <button
                   className="btn btn-sm btn-primary font-weight-bold"
                   onClick={() => openPlanModal('create')}
                 >
@@ -2097,6 +2288,484 @@ export default function TariffPlansView({
                               <i className="fas fa-plus mr-1"></i> Add Plan for Sponsor
                             </button>
                           </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 0.2 CATEGORIES (BILLING & COVERAGE CATEGORIES) SUBMODULE */}
+      {/* ======================================================== */}
+      {activeSubmodule === 'categories' && (
+        <div>
+          {/* Quick Stats Cards */}
+          <div className="row mb-4">
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card shadow-sm border-0 h-100" style={{ borderRadius: '12px', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderLeft: '4px solid #2563eb' }}>
+                <div className="card-body p-3">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <div className="text-xs font-weight-bold text-uppercase mb-1" style={{ color: '#2563eb', letterSpacing: '0.05em' }}>
+                        Total Categories
+                      </div>
+                      <div className="h4 mb-0 font-weight-bold text-gray-900">{categories.length}</div>
+                      <small className="text-muted" style={{ fontSize: '0.72rem' }}>Hospital Billing Schemes</small>
+                    </div>
+                    <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+                      <i className="fas fa-tags"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card shadow-sm border-0 h-100" style={{ borderRadius: '12px', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderLeft: '4px solid #059669' }}>
+                <div className="card-body p-3">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <div className="text-xs font-weight-bold text-uppercase mb-1" style={{ color: '#059669', letterSpacing: '0.05em' }}>
+                        Linked Sponsors
+                      </div>
+                      <div className="h4 mb-0 font-weight-bold text-gray-900">
+                        {categories.reduce((acc, curr) => acc + (curr.sponsors_count || 0), 0)}
+                      </div>
+                      <small className="text-muted" style={{ fontSize: '0.72rem' }}>HMO &amp; Corporate Sponsors</small>
+                    </div>
+                    <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+                      <i className="fas fa-building"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card shadow-sm border-0 h-100" style={{ borderRadius: '12px', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderLeft: '4px solid #7c3aed' }}>
+                <div className="card-body p-3">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <div className="text-xs font-weight-bold text-uppercase mb-1" style={{ color: '#7c3aed', letterSpacing: '0.05em' }}>
+                        Coverage Plans
+                      </div>
+                      <div className="h4 mb-0 font-weight-bold text-gray-900">
+                        {categories.reduce((acc, curr) => acc + (curr.plans_count || 0), 0)}
+                      </div>
+                      <small className="text-muted" style={{ fontSize: '0.72rem' }}>Tiered Benefit Tariffs</small>
+                    </div>
+                    <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #faf5ff 0%, #ede9fe 100%)', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+                      <i className="fas fa-layer-group"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-xl-3 col-md-6 mb-3">
+              <div className="card shadow-sm border-0 h-100" style={{ borderRadius: '12px', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderLeft: '4px solid #d97706' }}>
+                <div className="card-body p-3">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <div className="text-xs font-weight-bold text-uppercase mb-1" style={{ color: '#d97706', letterSpacing: '0.05em' }}>
+                        Enrolled Patients
+                      </div>
+                      <div className="h4 mb-0 font-weight-bold text-gray-900">
+                        {categories.reduce((acc, curr) => acc + (curr.patients_count || 0), 0)}
+                      </div>
+                      <small className="text-muted" style={{ fontSize: '0.72rem' }}>Registered Patients</small>
+                    </div>
+                    <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+                      <i className="fas fa-users"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Categories Table Card */}
+          <div className="card shadow-sm border-0 mb-4" style={{ borderRadius: '14px', overflow: 'hidden' }}>
+            <div className="card-header bg-white py-3 px-4 border-bottom">
+              <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center" style={{ gap: '14px' }}>
+                <div className="d-flex align-items-center">
+                  <div
+                    className="mr-3 d-flex align-items-center justify-content-center shadow-xs"
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                      color: '#2563eb',
+                      fontSize: '1.25rem',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <i className="fas fa-tags"></i>
+                  </div>
+                  <div>
+                    <div className="d-flex align-items-center flex-wrap" style={{ gap: '8px' }}>
+                      <h5 className="m-0 font-weight-bold text-gray-900" style={{ fontSize: '1.08rem' }}>
+                        Hospital Billing &amp; Coverage Categories
+                      </h5>
+                      <span
+                        className="badge font-weight-bold px-2.5 py-1 shadow-xs"
+                        style={{
+                          borderRadius: '6px',
+                          fontSize: '0.74rem',
+                          backgroundColor: '#eff6ff',
+                          color: '#1d4ed8',
+                          border: '1px solid #bfdbfe',
+                        }}
+                      >
+                        {filteredCategories.length} {filteredCategories.length === 1 ? 'Category' : 'Categories'}
+                      </span>
+                    </div>
+                    <div className="text-muted small mt-0.5" style={{ fontSize: '0.78rem' }}>
+                      Classifications defining insurance tiers, direct private pricelists, and company retainership billing workflows.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Action Controls */}
+                <div className="d-flex align-items-center flex-wrap" style={{ gap: '8px' }}>
+                  <div className="input-group input-group-sm" style={{ width: '230px' }}>
+                    <div className="input-group-prepend">
+                      <span className="input-group-text bg-white border-right-0 text-muted">
+                        <i className="fas fa-search"></i>
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      className="form-control border-left-0 pl-0"
+                      placeholder="Search categories..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      style={{ borderRadius: '0 6px 6px 0' }}
+                    />
+                    {searchTerm && (
+                      <div className="input-group-append">
+                        <button
+                          className="btn btn-outline-secondary bg-white border"
+                          type="button"
+                          onClick={() => setSearchTerm('')}
+                          title="Clear search"
+                        >
+                          <i className="fas fa-times"></i>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary font-weight-bold shadow-sm d-inline-flex align-items-center px-3 py-1.5"
+                    style={{
+                      borderRadius: '8px',
+                      fontSize: '0.84rem',
+                      backgroundColor: '#2563eb',
+                      borderColor: '#1d4ed8',
+                    }}
+                    onClick={() => openCategoryModal('create')}
+                  >
+                    <i className="fas fa-plus-circle mr-1.5"></i> Add New Category
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="card-body p-0">
+              <div className="table-responsive">
+                <table className="table table-hover mb-0 align-middle">
+                  <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <tr>
+                      <th style={{ width: '70px', fontSize: '0.74rem', letterSpacing: '0.05em' }} className="text-uppercase text-secondary font-weight-bold py-3 pl-4">#</th>
+                      <th style={{ fontSize: '0.74rem', letterSpacing: '0.05em' }} className="text-uppercase text-secondary font-weight-bold py-3">Category Classification</th>
+                      <th style={{ width: '230px', fontSize: '0.74rem', letterSpacing: '0.05em' }} className="text-uppercase text-secondary font-weight-bold py-3">Linked Sponsors</th>
+                      <th style={{ width: '210px', fontSize: '0.74rem', letterSpacing: '0.05em' }} className="text-uppercase text-secondary font-weight-bold py-3">Coverage Plans</th>
+                      <th style={{ width: '190px', fontSize: '0.74rem', letterSpacing: '0.05em' }} className="text-uppercase text-secondary font-weight-bold py-3">Enrolled Patients</th>
+                      <th style={{ width: '190px', fontSize: '0.74rem', letterSpacing: '0.05em' }} className="text-uppercase text-secondary font-weight-bold py-3 text-right pr-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCategories.map((cat, idx) => {
+                      const lower = (cat.category || '').toLowerCase();
+                      const isHmo = lower.includes('hmo');
+                      const isPrivate = lower.includes('private') || lower.includes('self');
+                      const isCorporate = lower.includes('corp') || lower.includes('retain');
+                      const isNhis = lower.includes('nhis') || lower.includes('state') || lower.includes('scheme');
+
+                      let iconClass = 'fa-tags';
+                      let iconBg = 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%)';
+                      let iconColor = '#475569';
+                      let iconBorder = '#cbd5e1';
+                      let badgeStyle = { backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
+                      let subtitle = 'Hospital Patient Billing Category';
+
+                      if (isHmo) {
+                        iconClass = 'fa-shield-alt';
+                        iconBg = 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)';
+                        iconColor = '#2563eb';
+                        iconBorder = '#bfdbfe';
+                        badgeStyle = { backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' };
+                        subtitle = 'Health Maintenance Organization • Claims & Approvals';
+                      } else if (isPrivate) {
+                        iconClass = 'fa-user-check';
+                        iconBg = 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)';
+                        iconColor = '#059669';
+                        iconBorder = '#a7f3d0';
+                        badgeStyle = { backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' };
+                        subtitle = 'Hospital Private Tariff • Self-Pay / Purse Billed';
+                      } else if (isCorporate) {
+                        iconClass = 'fa-building';
+                        iconBg = 'linear-gradient(135deg, #faf5ff 0%, #ede9fe 100%)';
+                        iconColor = '#7c3aed';
+                        iconBorder = '#ddd6fe';
+                        badgeStyle = { backgroundColor: '#faf5ff', color: '#6d28d9', border: '1px solid #ddd6fe' };
+                        subtitle = 'Corporate Retainership & Company Invoicing';
+                      } else if (isNhis) {
+                        iconClass = 'fa-landmark';
+                        iconBg = 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)';
+                        iconColor = '#d97706';
+                        iconBorder = '#fde68a';
+                        badgeStyle = { backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' };
+                        subtitle = 'National / State Social Health Insurance Scheme';
+                      }
+
+                      return (
+                        <tr key={cat.id || idx} style={{ transition: 'background-color 0.15s ease', borderBottom: '1px solid #f1f5f9' }}>
+                          <td className="pl-4 align-middle">
+                            <span
+                              className="badge font-weight-bold px-2 py-1 shadow-xs"
+                              style={{
+                                backgroundColor: '#f1f5f9',
+                                color: '#475569',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                fontFamily: 'monospace',
+                                fontSize: '0.80rem',
+                              }}
+                            >
+                              #{String(idx + 1).padStart(2, '0')}
+                            </span>
+                          </td>
+                          <td className="align-middle">
+                            <div className="d-flex align-items-center">
+                              <div
+                                className="shadow-xs mr-3 flex-shrink-0"
+                                style={{
+                                  width: '40px',
+                                  height: '40px',
+                                  borderRadius: '10px',
+                                  background: iconBg,
+                                  color: iconColor,
+                                  border: `1px solid ${iconBorder}`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '1rem',
+                                }}
+                              >
+                                <i className={`fas ${iconClass}`}></i>
+                              </div>
+                              <div>
+                                <div className="d-flex align-items-center flex-wrap" style={{ gap: '6px' }}>
+                                  <span className="font-weight-bold text-gray-900" style={{ fontSize: '0.94rem' }}>
+                                    {cat.category}
+                                  </span>
+                                  <span
+                                    className="badge font-weight-bold px-2 py-0.5 ml-1"
+                                    style={{
+                                      borderRadius: '4px',
+                                      fontSize: '0.70rem',
+                                      ...badgeStyle,
+                                    }}
+                                  >
+                                    {isHmo ? 'HMO Scheme' : isPrivate ? 'Private Tariff' : isCorporate ? 'Corporate' : 'Standard'}
+                                  </span>
+                                </div>
+                                <div className="text-muted small mt-0.5" style={{ fontSize: '0.76rem' }}>
+                                  {subtitle}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="align-middle">
+                            <div
+                              className="d-inline-flex align-items-center shadow-xs"
+                              style={{
+                                backgroundColor: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '8px',
+                                padding: '5px 11px',
+                                gap: '8px',
+                              }}
+                            >
+                              <i className="fas fa-building text-primary" style={{ fontSize: '0.85rem' }}></i>
+                              <div className="d-flex align-items-baseline" style={{ gap: '4px' }}>
+                                <strong className="text-gray-900" style={{ fontSize: '0.88rem' }}>{cat.sponsors_count || 0}</strong>
+                                <span className="text-muted" style={{ fontSize: '0.74rem' }}>{(cat.sponsors_count || 0) === 1 ? 'Sponsor' : 'Sponsors'}</span>
+                              </div>
+                              {(cat.sponsors_count || 0) > 0 && (
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-outline-primary font-weight-bold ml-1 py-0 px-1.5 shadow-none"
+                                  style={{ fontSize: '0.70rem', borderRadius: '5px', height: '20px', lineHeight: '18px' }}
+                                  onClick={() => {
+                                    setSponsorCategoryFilter(String(cat.id));
+                                    setActiveSubmodule('sponsors');
+                                    setActiveSubSubmodule('manage_sponsors');
+                                  }}
+                                  title={`Filter sponsors by ${cat.category}`}
+                                >
+                                  View <i className="fas fa-arrow-right ml-0.5" style={{ fontSize: '0.62rem' }}></i>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="align-middle">
+                            <div
+                              className="d-inline-flex align-items-center shadow-xs"
+                              style={{
+                                backgroundColor: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '8px',
+                                padding: '5px 11px',
+                                gap: '8px',
+                              }}
+                            >
+                              <i className="fas fa-layer-group text-info" style={{ fontSize: '0.85rem' }}></i>
+                              <div className="d-flex align-items-baseline" style={{ gap: '4px' }}>
+                                <strong className="text-gray-900" style={{ fontSize: '0.88rem' }}>{cat.plans_count || 0}</strong>
+                                <span className="text-muted" style={{ fontSize: '0.74rem' }}>{(cat.plans_count || 0) === 1 ? 'Plan' : 'Plans'}</span>
+                              </div>
+                              {(cat.plans_count || 0) > 0 && (
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-outline-info font-weight-bold ml-1 py-0 px-1.5 shadow-none"
+                                  style={{ fontSize: '0.70rem', borderRadius: '5px', height: '20px', lineHeight: '18px' }}
+                                  onClick={() => {
+                                    setActiveSubmodule('plans');
+                                    setActiveSubSubmodule('manage_plans');
+                                  }}
+                                  title={`View plans under ${cat.category}`}
+                                >
+                                  View <i className="fas fa-arrow-right ml-0.5" style={{ fontSize: '0.62rem' }}></i>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="align-middle">
+                            <div
+                              className="d-inline-flex align-items-center shadow-xs"
+                              style={{
+                                backgroundColor: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '8px',
+                                padding: '5px 11px',
+                                gap: '8px',
+                              }}
+                            >
+                              <i className="fas fa-users text-secondary" style={{ fontSize: '0.85rem' }}></i>
+                              <div className="d-flex align-items-baseline" style={{ gap: '4px' }}>
+                                <strong className="text-gray-900" style={{ fontSize: '0.88rem' }}>{cat.patients_count || 0}</strong>
+                                <span className="text-muted" style={{ fontSize: '0.74rem' }}>{(cat.patients_count || 0) === 1 ? 'Patient' : 'Patients'}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="align-middle text-right pr-4">
+                            <div className="d-flex align-items-center justify-content-end" style={{ gap: '8px' }}>
+                              <button
+                                type="button"
+                                className="btn btn-sm d-inline-flex align-items-center font-weight-bold shadow-xs"
+                                style={{
+                                  backgroundColor: '#ffffff',
+                                  border: '1px solid #cbd5e1',
+                                  color: '#1e40af',
+                                  borderRadius: '7px',
+                                  padding: '4px 12px',
+                                  fontSize: '0.78rem',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                onClick={() => openCategoryModal('edit', cat)}
+                                title="Edit Category Name"
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#eff6ff';
+                                  e.currentTarget.style.borderColor = '#93c5fd';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#ffffff';
+                                  e.currentTarget.style.borderColor = '#cbd5e1';
+                                }}
+                              >
+                                <i className="fas fa-edit mr-1.5 text-primary"></i> Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm d-inline-flex align-items-center font-weight-bold shadow-xs"
+                                style={{
+                                  backgroundColor: '#fff1f2',
+                                  border: '1px solid #fecdd3',
+                                  color: '#e11d48',
+                                  borderRadius: '7px',
+                                  padding: '4px 12px',
+                                  fontSize: '0.78rem',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                onClick={() => handleDeleteCategory(cat)}
+                                title="Delete Category"
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#ffe4e6';
+                                  e.currentTarget.style.borderColor = '#fda4af';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#fff1f2';
+                                  e.currentTarget.style.borderColor = '#fecdd3';
+                                }}
+                              >
+                                <i className="fas fa-trash-alt mr-1.5 text-danger"></i> Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredCategories.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="text-center py-5 text-muted">
+                          <div
+                            className="mx-auto mb-3 d-flex align-items-center justify-content-center"
+                            style={{
+                              width: '64px',
+                              height: '64px',
+                              borderRadius: '50%',
+                              backgroundColor: '#f1f5f9',
+                              color: '#94a3b8',
+                              fontSize: '1.6rem',
+                            }}
+                          >
+                            <i className="fas fa-tags"></i>
+                          </div>
+                          <h6 className="font-weight-bold text-gray-800 mb-1">No Categories Found</h6>
+                          <p className="small text-muted mb-3">
+                            {searchTerm ? `No category matching "${searchTerm}". Try resetting search.` : 'Get started by creating your first hospital billing category.'}
+                          </p>
+                          <button
+                            className="btn btn-sm btn-primary font-weight-bold shadow-sm px-3 py-1.5"
+                            style={{ borderRadius: '8px' }}
+                            onClick={() => {
+                              if (searchTerm) setSearchTerm('');
+                              else openCategoryModal('create');
+                            }}
+                          >
+                            <i className={`fas ${searchTerm ? 'fa-undo mr-1.5' : 'fa-plus-circle mr-1.5'}`}></i>
+                            {searchTerm ? 'Reset Search' : 'Add First Category'}
+                          </button>
                         </td>
                       </tr>
                     )}
@@ -5926,9 +6595,19 @@ export default function TariffPlansView({
                   </div>
 
                   <div className="form-group mb-0">
-                    <label className="small font-weight-bold text-dark">
-                      Coverage Category <span className="text-danger">*</span>
-                    </label>
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <label className="small font-weight-bold text-dark mb-0">
+                        Coverage Category <span className="text-danger">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="btn btn-link btn-sm p-0 font-weight-bold text-primary"
+                        style={{ fontSize: '0.78rem' }}
+                        onClick={() => openCategoryModal('create')}
+                      >
+                        <i className="fas fa-plus-circle mr-1"></i> + New Category
+                      </button>
+                    </div>
                     <select
                       className="form-control"
                       value={sponsorForm.category}
@@ -6288,6 +6967,97 @@ export default function TariffPlansView({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* CATEGORY CREATE / EDIT MODAL                             */}
+      {/* ======================================================== */}
+      {categoryModalOpen && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1060 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeCategoryModal();
+          }}
+        >
+          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '460px', margin: '1.75rem auto' }}>
+            <div className="modal-content shadow-lg border-0" style={{ borderRadius: '12px', overflow: 'hidden' }}>
+              <div className="modal-header bg-gradient-primary text-white py-3 px-4 d-flex align-items-center justify-content-between">
+                <h5 className="modal-title font-weight-bold text-white mb-0 d-flex align-items-center">
+                  <i className="fas fa-tags mr-2 text-warning"></i>
+                  {editingCategory ? 'Edit Billing Category' : 'Create Billing Category'}
+                </h5>
+                <button
+                  type="button"
+                  className="close text-white"
+                  aria-label="Close"
+                  onClick={closeCategoryModal}
+                  style={{ textShadow: 'none', opacity: 0.9, fontSize: '1.4rem' }}
+                >
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveCategory}>
+                <div className="modal-body p-4">
+                  <div className="alert alert-light border small text-muted mb-3 d-flex align-items-center">
+                    <i className="fas fa-info-circle text-primary mr-2" style={{ fontSize: '1.2rem' }}></i>
+                    <span>
+                      Categories group hospital sponsors, coverage plans, and patients for billing and authorization workflows.
+                    </span>
+                  </div>
+
+                  <div className="form-group mb-3">
+                    <label className="small font-weight-bold text-dark mb-1">
+                      Category Name <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control font-weight-bold"
+                      placeholder="e.g. Corporate Retainer, Family Retainer, NHIS, Private, HMO"
+                      value={categoryForm.category}
+                      onChange={(e) =>
+                        setCategoryForm({ ...categoryForm, category: e.target.value })
+                      }
+                      required
+                      autoFocus
+                    />
+                    <small className="form-text text-muted">
+                      Common standard examples: <strong>HMO</strong>, <strong>Private</strong>, <strong>Corporate</strong>, <strong>Retainer</strong>, <strong>NHIS</strong>, <strong>Family</strong>, <strong>Staff</strong>.
+                    </small>
+                  </div>
+                </div>
+
+                <div className="modal-footer bg-light py-3 px-4 border-top d-flex justify-content-end align-items-center">
+                  <button
+                    type="button"
+                    className="btn btn-secondary font-weight-bold px-3 mr-2"
+                    onClick={closeCategoryModal}
+                    disabled={categorySaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary font-weight-bold px-4"
+                    disabled={categorySaving}
+                  >
+                    {categorySaving ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-1"></i> Saving...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-save mr-1"></i> {editingCategory ? 'Update Category' : 'Create Category'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

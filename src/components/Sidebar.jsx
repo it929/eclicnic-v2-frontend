@@ -7,6 +7,7 @@ import {
   AVAILABLE_MODULES,
   getDefaultModulesForDepartment,
   getDefaultTabForDepartment,
+  getDepartmentLanding,
 } from '../utils/departmentUtils';
 
 export default function Sidebar({
@@ -258,22 +259,23 @@ export default function Sidebar({
         setCurrentRole(cleanRole);
         localStorage.setItem('clinic365_dept', cleanRole);
       }
-      if (setActiveTab) {
-        // Find matching role in DB to see its primary tab
-        const matched = dbRoles.find(
-          (r) =>
-            normalizeDepartmentKey(r.name) === normalized ||
-            (rawDeptName && r.name.toLowerCase() === String(rawDeptName).toLowerCase())
-        );
-        const firstMod = matched?.modules?.[0];
-        const targetTab =
-          firstMod?.primary_tab ||
-          (normalized === 'frontdesk' ? 'patients' : getDefaultTabForDepartment(normalized, rawDeptName));
-        setActiveTab(targetTab);
+      // Route directly to the department's dedicated landing page:
+      // Front Desk -> /patients/all
+      // Nursing & Clinical -> /appointments/today
+      // Billings -> /billings/unprocessed
+      // Admin / CMD -> /dashboard
+      const landing = getDepartmentLanding(normalized, rawDeptName);
+      if (navigateToRoute && landing.route) {
+        navigateToRoute(landing.route);
+      } else if (setActiveTab) {
+        setActiveTab(landing.tab, landing.subTab, landing.subSubTab);
+        if (landing.route && window.location.hash !== `#${landing.route}`) {
+          window.location.hash = landing.route;
+        }
       }
       setIsDepartmentDropdownOpen(false);
     },
-    [isAdmin, setSelectedDepartment, setCurrentRole, setActiveTab, dbRoles]
+    [isAdmin, setSelectedDepartment, setCurrentRole, setActiveTab, navigateToRoute]
   );
 
   // Automatically expand the first module with submodules when switching department
@@ -704,6 +706,14 @@ export default function Sidebar({
                   onClick={() => setActiveTab('tariffs', 'plans', 'manage_plans')}
                 >
                   <i className="fas fa-layer-group mr-1"></i> Plans
+                </a>
+
+                {/* Categories */}
+                <a
+                  className="collapse-item cursor-pointer text-primary font-weight-bold mb-1"
+                  onClick={() => setActiveTab('tariffs', 'categories', 'manage_categories')}
+                >
+                  <i className="fas fa-tags mr-1"></i> Categories
                 </a>
 
                 {/* Service Tariffs */}
