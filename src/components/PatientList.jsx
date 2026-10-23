@@ -1011,7 +1011,6 @@ export default function PatientList({
                     />
                   </th>
                   <th style={{ width: '45px' }} className="text-center">#</th>
-                  <th style={{ minWidth: '150px' }}>Hospital MRN</th>
                   <th style={{ minWidth: '220px' }}>Patient Full Name</th>
                   <th style={{ minWidth: '130px' }}>Contact Details</th>
                   <th style={{ minWidth: '150px' }}>Category &amp; Sponsor</th>
@@ -1025,7 +1024,7 @@ export default function PatientList({
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="11" className="text-center py-5">
+                    <td colSpan="10" className="text-center py-5">
                       <div className="spinner-border text-primary mb-2" role="status">
                         <span className="sr-only">Loading records...</span>
                       </div>
@@ -1068,18 +1067,7 @@ export default function PatientList({
                           {rowNumber}
                         </td>
 
-                        {/* 2. Hospital MRN */}
-                        <td className="align-middle">
-                          <span
-                            className="badge badge-light border font-weight-bold text-danger px-2 py-1 shadow-xs"
-                            style={{ fontSize: '0.82rem', letterSpacing: '0.5px' }}
-                          >
-                            <i className="fas fa-id-badge text-muted mr-1"></i>
-                            {p.hospital_number || 'NO MRN'}
-                          </span>
-                        </td>
-
-                        {/* 3. Patient Full Name & Age/Gender */}
+                        {/* 2. Patient Full Name & Age/Gender */}
                         <td className="align-middle">
                           <div className="d-flex align-items-center">
                             <div
@@ -1158,27 +1146,53 @@ export default function PatientList({
                         {/* 6. Family Unit */}
                         <td className="align-middle">
                           {p.family_number ? (
-                            <div
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (onNavigateTab) onNavigateTab('family-folders');
-                              }}
-                              className="badge badge-light border border-primary text-primary px-2 py-1 shadow-xs font-weight-bold"
-                              style={{ cursor: 'pointer', fontSize: '0.78rem' }}
-                              title="Click to view Family Folder"
-                            >
-                              <i className="fas fa-folder-open text-warning mr-1"></i>
-                              {p.family_number}
-                              {p.family_member_suffix && (
-                                <span className="badge badge-primary ml-1 px-1.5 py-0 text-white font-weight-bold">
-                                  {p.family_member_suffix}
-                                </span>
+                            <div>
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onNavigateTab) onNavigateTab('family-folders');
+                                }}
+                                className="badge badge-light border border-primary text-primary px-2 py-1 shadow-xs font-weight-bold"
+                                style={{ cursor: 'pointer', fontSize: '0.78rem' }}
+                                title="Click to view Family Folder"
+                              >
+                                <i className="fas fa-folder-open text-warning mr-1"></i>
+                                {p.family_number}
+                                {p.family_member_suffix && (
+                                  <span className="badge badge-primary ml-1 px-1.5 py-0 text-white font-weight-bold">
+                                    {p.family_member_suffix}
+                                  </span>
+                                )}
+                              </div>
+                              {p.hospital_number && (
+                                <div className="mt-1">
+                                  <span
+                                    className="badge badge-light border text-danger font-weight-bold px-1.5 py-0.5 shadow-xs font-mono"
+                                    style={{ fontSize: '0.72rem', letterSpacing: '0.4px' }}
+                                    title="Individual Hospital Number"
+                                  >
+                                    <i className="fas fa-id-badge text-muted mr-1"></i>
+                                    {p.hospital_number}
+                                  </span>
+                                </div>
                               )}
                             </div>
                           ) : (
-                            <span className="text-muted small" style={{ fontSize: '0.75rem' }}>
-                              <i className="fas fa-user mr-1 text-gray-400"></i> Individual
-                            </span>
+                            <div>
+                              <span className="text-muted small d-block" style={{ fontSize: '0.75rem' }}>
+                                <i className="fas fa-user mr-1 text-gray-400"></i> Individual
+                              </span>
+                              {p.hospital_number && (
+                                <span
+                                  className="badge badge-light border text-danger font-weight-bold px-1.5 py-0.5 mt-1 d-inline-block font-mono shadow-xs"
+                                  style={{ fontSize: '0.75rem', letterSpacing: '0.4px' }}
+                                  title="Individual Hospital Number"
+                                >
+                                  <i className="fas fa-id-badge text-muted mr-1"></i>
+                                  {p.hospital_number}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </td>
 
@@ -1323,7 +1337,7 @@ export default function PatientList({
                   })
                 ) : (
                   <tr>
-                    <td colSpan="11" className="text-center py-5">
+                    <td colSpan="10" className="text-center py-5">
                       <div className="py-4">
                         <i className="fas fa-user-slash fa-3x text-gray-300 mb-3 d-block"></i>
                         <h6 className="font-weight-bold text-gray-700">No Patient Records Found</h6>

@@ -70,7 +70,11 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
   const [receipts, setReceipts] = useState([]);
   const [loadingRecords, setLoadingRecords] = useState(false);
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all'); // 'all' | 'pending' | 'paid'
-  const [invoiceDateFilter, setInvoiceDateFilter] = useState('today'); // 'today' | 'all' | 'YYYY-MM-DD'
+  const [invoiceDateFilter, setInvoiceDateFilter] = useState('today'); // 'today' | 'all' | 'range' | 'YYYY-MM-DD'
+  const [invoiceStartDate, setInvoiceStartDate] = useState(() => getTodayStr());
+  const [invoiceEndDate, setInvoiceEndDate] = useState(() => getTodayStr());
+  const [sponsorFilter, setSponsorFilter] = useState('');
+  const [sponsorsList, setSponsorsList] = useState([]);
 
   // Combined Encounter Bill Modal State (Screenshot 2)
   const [isCombinedModalOpen, setIsCombinedModalOpen] = useState(false);
@@ -117,6 +121,11 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
   const [issuingReceipt, setIssuingReceipt] = useState(false);
   const [receiptSearchQuery, setReceiptSearchQuery] = useState('');
   const [receiptDateFilter, setReceiptDateFilter] = useState('today'); // 'today' | 'all' | 'YYYY-MM-DD'
+
+  // Pay Confirmation Modal State
+  const [payConfirmGroup, setPayConfirmGroup] = useState(null);
+  const [payConfirmMethod, setPayConfirmMethod] = useState('Cash');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // ==========================================
   // Load Encounters Billing Queue with Filters
@@ -172,20 +181,53 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
   const loadBillingsRecords = async () => {
     try {
       setLoadingRecords(true);
-      const [invRes, recRes, patRes] = await Promise.all([
+      const [invRes, recRes, patRes, spRes] = await Promise.all([
         api.getInvoices({ page_size: 150 }),
         api.getReceipts({ page_size: 150 }),
-        api.getPatients({ active: 1, page_size: 200 })
+        api.getPatients({ active: 1, page_size: 200 }),
+        typeof api.getSponsors === 'function' ? api.getSponsors().catch(() => []) : Promise.resolve([])
       ]);
       setInvoices(invRes.results || invRes || []);
       setReceipts(recRes.results || recRes || []);
       setPatientsList(patRes.results || patRes || []);
+      setSponsorsList(spRes?.results || spRes || []);
     } catch (err) {
       console.error('Error fetching billing records:', err);
     } finally {
       setLoadingRecords(false);
     }
   };
+
+  // Comprehensive unique sponsors list for filtering
+  const availableSponsors = useMemo(() => {
+    const names = new Set();
+    names.add('PAY FROM PURSE / CASH');
+
+    if (Array.isArray(sponsorsList)) {
+      sponsorsList.forEach((sp) => {
+        const n = typeof sp === 'string' ? sp : (sp.name || sp.sponsor_name);
+        if (n && n.trim()) names.add(n.trim());
+      });
+    }
+
+    if (Array.isArray(invoices)) {
+      invoices.forEach((inv) => {
+        if (inv.sponsor && inv.sponsor.trim()) names.add(inv.sponsor.trim());
+      });
+    }
+
+    if (Array.isArray(encounterQueue)) {
+      encounterQueue.forEach((enc) => {
+        if (enc.sponsor && enc.sponsor.trim()) names.add(enc.sponsor.trim());
+      });
+    }
+
+    return Array.from(names).filter(Boolean).sort((a, b) => {
+      if (a === 'PAY FROM PURSE / CASH') return -1;
+      if (b === 'PAY FROM PURSE / CASH') return 1;
+      return a.localeCompare(b);
+    });
+  }, [sponsorsList, invoices, encounterQueue]);
 
   useEffect(() => {
     loadEncounterQueue();
@@ -211,18 +253,29 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
     const isEncHmo = enc.is_hmo === true || (enc.category && String(enc.category?.category || enc.category?.name || enc.category).toLowerCase().includes('hmo')) || false;
 
     // Clone billable items so user can edit them safely
-    const clonedItems = (enc.billable_items || []).map((it, idx) => ({
-      ...it,
-      temp_id: it.id || `item_${idx}_${Date.now()}`,
-      quantity: Number(it.quantity || 1),
-      rate: Number(it.rate || 0),
-      discount: Number(it.discount || 0),
-      total: Number(it.total || 0),
-      payment_option: isEncHmo ? (it.payment_option || 'Claim') : 'Cash',
-      compulsory_pa_code: Boolean(it.compulsory_pa_code),
-      bill: it.bill !== false,
-      pa_code: it.pa_code || '',
-    }));
+    const clonedItems = (enc.billable_items || []).map((it, idx) => {
+      const isPurseItem = Boolean(
+        it.is_pay_from_purse ||
+        (it.payment_option && it.payment_option.toLowerCase() !== 'claim') ||
+        (typeof it.service_item === 'string' && (
+          it.service_item.toLowerCase().includes('pay from your purse') ||
+          it.service_item.toLowerCase().includes('pay from purse')
+        ))
+      );
+      return {
+        ...it,
+        temp_id: it.id || `item_${idx}_${Date.now()}`,
+        quantity: Number(it.quantity || 1),
+        rate: Number(it.rate || 0),
+        discount: Number(it.discount || 0),
+        total: Number(it.total || 0),
+        payment_option: isPurseItem ? (it.payment_option && it.payment_option !== 'Claim' ? it.payment_option : 'Cash') : (isEncHmo ? (it.payment_option || 'Claim') : 'Cash'),
+        is_pay_from_purse: isPurseItem,
+        compulsory_pa_code: Boolean(it.compulsory_pa_code),
+        bill: it.bill !== false,
+        pa_code: it.pa_code || '',
+      };
+    });
 
     // Do NOT push a fake consultation row if empty!
     // If clonedItems is empty, it means consultation and all orders are settled or awaiting clinician orders.
@@ -379,6 +432,27 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
     return false;
   }, [currentEncounter]);
 
+  const claimBilledItems = useMemo(
+    () => billedItemsOnly.filter((it) => (it.payment_option || '').toLowerCase() === 'claim'),
+    [billedItemsOnly]
+  );
+  const purseBilledItems = useMemo(
+    () => billedItemsOnly.filter((it) => (it.payment_option || '').toLowerCase() !== 'claim'),
+    [billedItemsOnly]
+  );
+  const claimBilledTotal = useMemo(
+    () => claimBilledItems.reduce((sum, it) => sum + Number(it.total || 0), 0),
+    [claimBilledItems]
+  );
+  const purseBilledTotal = useMemo(
+    () => purseBilledItems.reduce((sum, it) => sum + Number(it.total || 0), 0),
+    [purseBilledItems]
+  );
+  const isSplitBilling = useMemo(
+    () => isHmoEncounter && claimBilledItems.length > 0 && purseBilledItems.length > 0,
+    [isHmoEncounter, claimBilledItems, purseBilledItems]
+  );
+
   // ==========================================
   // Group Pending Private Invoices for Receipt Issuance
   // Merged per patient for a particular day with date filtering
@@ -390,7 +464,12 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
     for (const inv of invoices) {
       if (inv.completed) continue;
       // Skip HMO claims (claims are submitted to HMO, not receipted at patient cashier)
-      if (inv.payment_option === 'Claim' || (inv.invoice_number && inv.invoice_number.startsWith('CLM-')) || inv.is_hmo) {
+      const isClaim = Boolean(
+        inv.payment_option === 'Claim' ||
+        (inv.invoice_number && inv.invoice_number.startsWith('CLM-')) ||
+        (inv.is_hmo && !inv.invoice_number?.startsWith('INV-'))
+      );
+      if (isClaim) {
         continue;
       }
 
@@ -553,60 +632,73 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
       const res = await api.generateEncounterBill(payload);
 
       // Safely extract response data
-      const invoiceNumber = res?.invoice_number || `INV-${enc.patient_id}-${Date.now().toString().slice(-4)}`;
-      const billNumber = res?.bill_number || invoiceNumber.replace('INV-', '').replace('CLM-', '') || `411${Date.now().toString().slice(-4)}`;
+      const hasSplit = Boolean(res?.has_split);
+      const claimNumber = res?.claim_number;
+      const patientInvoiceNumber = res?.invoice_number;
+      const primaryNumber = res?.primary_number || claimNumber || patientInvoiceNumber || `INV-${enc.patient_id}`;
+      const billNumber = res?.bill_number || primaryNumber.replace('INV-', '').replace('CLM-', '') || `411${Date.now().toString().slice(-4)}`;
       const patientData = res?.patient_data || {};
 
-      // Prepare preview payload for "View / Print" button
-      let previewData = null;
       const purposesStr = Array.isArray(enc.purposes)
         ? enc.purposes.join(', ')
         : (enc.purpose || 'General Consultation');
 
-      if (isHmo) {
-        previewData = {
-          invoice_number: invoiceNumber,
-          session_number: patientData.session_number || billNumber || `280${Date.now().toString().slice(-4)}`,
-          patient_name: patientData.name || enc.patient_name || 'Patient',
-          hospital_number: patientData.hospital_number || enc.hospital_number || 'N/A',
-          sponsor: patientData.sponsor || enc.sponsor || 'HMO Sponsor',
-          plan: patientData.plan || enc.plan || 'Standard',
-          policy_number: patientData.policy_number || enc.policy_number || 'NIL',
-          phone: patientData.phone || enc.phone_number || 'N/A',
-          gender: patientData.gender || enc.gender || 'N/A',
-          age: patientData.age || enc.age || '',
-          address: patientData.address || enc.address || '46, Ijaye Road, Opposite Ogba Shopping Arcade Caterpillar Bus Stop, Lagos, Nigeria',
-          bill_date: billDate,
-          purpose: purposesStr,
-          pa_code: itemsToBill.find((it) => it.pa_code)?.pa_code || 'NIL',
-          items: itemsToBill,
-          total_amount: totalPayable,
-        };
-      } else {
-        previewData = {
-          invoice_number: invoiceNumber,
-          bill_number: billNumber,
-          patient_name: patientData.name || enc.patient_name || 'Patient',
-          hospital_number: patientData.hospital_number || enc.hospital_number || 'N/A',
-          sponsor: patientData.sponsor || enc.sponsor || 'ISALU HOSPITALS PRIVATE',
-          plan: patientData.plan || enc.plan || 'PRIVATE PRICELIST',
-          policy_number: patientData.policy_number || 'NIL',
-          enrollee_number: patientData.enrollee_number || 'NIL',
-          address: patientData.address || enc.address || 'OGBA',
-          phone: patientData.phone || enc.phone_number || 'N/A',
-          gender: patientData.gender || enc.gender || 'N/A',
-          created_datetime: res?.created_datetime || new Date().toLocaleString(),
-          staff_name: res?.staff_name || getLoggedInStaffName(),
-          items: itemsToBill,
-          total_amount: totalPayable,
-          previous_balance: Number(res?.previous_balance || 0),
-          latest_balance: Number(res?.latest_balance || totalPayable || 0),
-        };
-      }
+      // Separate items for preview
+      const claimItems = hasSplit
+        ? itemsToBill.filter((it) => (it.payment_option || '').toLowerCase() === 'claim')
+        : (isHmo ? itemsToBill : []);
+      const outOfPocketItems = hasSplit
+        ? itemsToBill.filter((it) => (it.payment_option || '').toLowerCase() !== 'claim')
+        : (isHmo ? [] : itemsToBill);
+
+      const claimPreviewData = (isHmo || hasSplit) && claimNumber ? {
+        invoice_number: claimNumber,
+        session_number: patientData.session_number || billNumber || `280${Date.now().toString().slice(-4)}`,
+        patient_name: patientData.name || enc.patient_name || 'Patient',
+        hospital_number: patientData.hospital_number || enc.hospital_number || 'N/A',
+        sponsor: patientData.sponsor || enc.sponsor || 'HMO Sponsor',
+        plan: patientData.plan || enc.plan || 'Standard',
+        policy_number: patientData.policy_number || enc.policy_number || 'NIL',
+        phone: patientData.phone || enc.phone_number || 'N/A',
+        gender: patientData.gender || enc.gender || 'N/A',
+        age: patientData.age || enc.age || '',
+        address: patientData.address || enc.address || '46, Ijaye Road, Opposite Ogba Shopping Arcade Caterpillar Bus Stop, Lagos, Nigeria',
+        bill_date: billDate,
+        purpose: purposesStr,
+        pa_code: claimItems.find((it) => it.pa_code)?.pa_code || 'NIL',
+        items: claimItems.length > 0 ? claimItems : itemsToBill,
+        total_amount: res?.claim_total || totalPayable,
+      } : null;
+
+      const invoicePreviewData = (!isHmo || hasSplit) && patientInvoiceNumber ? {
+        invoice_number: patientInvoiceNumber,
+        bill_number: patientInvoiceNumber.replace('INV-', '') || billNumber,
+        patient_name: patientData.name || enc.patient_name || 'Patient',
+        hospital_number: patientData.hospital_number || enc.hospital_number || 'N/A',
+        sponsor: 'PAY FROM PURSE / CASH',
+        plan: 'OUT-OF-POCKET TARIFF',
+        policy_number: 'NIL',
+        enrollee_number: 'NIL',
+        address: patientData.address || enc.address || 'OGBA',
+        phone: patientData.phone || enc.phone_number || 'N/A',
+        gender: patientData.gender || enc.gender || 'N/A',
+        created_datetime: res?.created_datetime || new Date().toLocaleString(),
+        staff_name: res?.staff_name || getLoggedInStaffName(),
+        items: outOfPocketItems.length > 0 ? outOfPocketItems : itemsToBill,
+        total_amount: res?.inv_total || totalPayable,
+        previous_balance: Number(res?.previous_balance || 0),
+        latest_balance: Number(res?.latest_balance || totalPayable || 0),
+      } : null;
 
       // Display Professional Success Alert Modal immediately
       setBillSuccessData({
-        invoice_number: invoiceNumber,
+        has_split: hasSplit,
+        claim_number: claimNumber,
+        claim_items_count: res?.claim_items_count || claimItems.length,
+        claim_total: res?.claim_total || (hasSplit ? 0 : totalPayable),
+        invoice_number: patientInvoiceNumber,
+        inv_items_count: res?.inv_items_count || outOfPocketItems.length,
+        inv_total: res?.inv_total || (hasSplit ? 0 : totalPayable),
         patient_name: enc.patient_name || patientData.name || 'Patient',
         hospital_number: enc.hospital_number || patientData.hospital_number || 'N/A',
         sponsor: enc.sponsor || patientData.sponsor || 'Self-Pay / Cash',
@@ -614,8 +706,10 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
         is_hmo: isHmo,
         total_amount: totalPayable,
         items_count: itemsToBill.length,
-        message: res?.message || `${isHmo ? 'HMO Claim' : 'Invoice'} #${invoiceNumber} successfully created for ${enc.patient_name || 'Patient'}!`,
-        preview_data: previewData,
+        message: res?.message || `${isHmo ? 'HMO Claim' : 'Invoice'} #${primaryNumber} successfully created for ${enc.patient_name || 'Patient'}!`,
+        claim_preview_data: claimPreviewData,
+        invoice_preview_data: invoicePreviewData,
+        preview_data: claimPreviewData || invoicePreviewData,
       });
 
       setFeedback({
@@ -1126,14 +1220,10 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
         </head>
         <body>
           <div class="claim-sheet">
-            <!-- Top Session and Software Meta -->
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; font-size: 11px;">
+            <!-- Top Session -->
+            <div style="margin-bottom: 12px; font-size: 11px;">
               <div style="font-weight: 700; text-transform: uppercase;">
                 ${patientName} [ ${hospitalNumber} ] - SESSION #: ${sessionNumber}
-              </div>
-              <div style="text-align: right; font-size: 10px; color: #333;">
-                <div>Document generated by e'Clinic+</div>
-                <div>www.eclathealthcare.com</div>
               </div>
             </div>
 
@@ -1596,6 +1686,10 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
   // Helper: check if invoice or group is HMO vs Private
   const isHmoRecord = (rec) => {
     if (!rec) return false;
+    // An invoice number starting with INV- is strictly a patient invoice (self-pay/purse), not an HMO claim
+    if (rec.invoice_number && String(rec.invoice_number).startsWith('INV-')) return false;
+    if (rec.primary_invoice_number && String(rec.primary_invoice_number).startsWith('INV-')) return false;
+
     const payOpt = String(rec.payment_option || '').toLowerCase();
     if (payOpt.includes('claim') || payOpt.includes('hmo')) return true;
     if (rec.invoice_number && String(rec.invoice_number).startsWith('CLM-')) return true;
@@ -1627,20 +1721,26 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
   };
 
   // Mark an entire consolidated invoice group as paid
-  const handleMarkGroupAsPaid = async (grp) => {
+  const handleMarkGroupAsPaid = async (grp, selectedPaymentMethod = null) => {
     try {
+      setIsProcessingPayment(true);
       const pendingItems = grp.items.filter((it) => !it.completed);
-      if (pendingItems.length === 0) return;
+      if (pendingItems.length === 0) {
+        setPayConfirmGroup(null);
+        return;
+      }
 
       const invNumbers = grp.invoice_numbers_list && grp.invoice_numbers_list.length > 0
         ? grp.invoice_numbers_list
         : [grp.invoice_number];
 
+      const paymentType = selectedPaymentMethod || grp.payment_option || 'Cash';
+
       try {
         await api.issueReceipt({
           invoice_numbers: invNumbers,
           invoice_number: grp.invoice_number,
-          payment_type: grp.payment_option || 'Cash',
+          payment_type: paymentType,
           remarks: `Payment settlement for ${pendingItems.length} item(s) on ${grp.date_str}`,
           amount_paid: grp.total_amount,
           staff_id: getLoggedInStaffId(),
@@ -1652,7 +1752,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
           patient: grp.patient,
           invoice_number: grp.invoice_number,
           total_price: grp.total_amount,
-          payment_type: grp.payment_option || 'Cash',
+          payment_type: paymentType,
           remarks: `Payment settlement for ${grp.patient_name}`,
           staff: getLoggedInStaffId(),
         });
@@ -1662,12 +1762,15 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
         type: 'success',
         text: `Payment of ₦${grp.total_amount.toLocaleString()} recorded successfully for ${grp.patient_name} (Invoice ${grp.invoice_number})!`,
       });
+      setPayConfirmGroup(null);
       loadBillingsRecords();
     } catch (err) {
       setFeedback({
         type: 'danger',
         text: 'Error recording payment: ' + (err.response?.data?.detail || err.message),
       });
+    } finally {
+      setIsProcessingPayment(false);
     }
   };
 
@@ -1705,13 +1808,21 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
       if (invoiceDateFilter === 'today' && itemDateStr !== todayStr) {
         continue;
       }
-      if (invoiceDateFilter !== 'today' && invoiceDateFilter !== 'all' && itemDateStr !== invoiceDateFilter) {
+      if (invoiceDateFilter === 'range') {
+        if (invoiceStartDate && itemDateStr < invoiceStartDate) continue;
+        if (invoiceEndDate && itemDateStr > invoiceEndDate) continue;
+      } else if (invoiceDateFilter !== 'today' && invoiceDateFilter !== 'all' && itemDateStr !== invoiceDateFilter) {
         continue;
       }
 
-      // Group key: One consolidated invoice row per patient for the day
+      // Group key: One consolidated invoice row per patient for the day, separated by document type (claim vs invoice)
+      const isDocClaim = Boolean(
+        (inv.invoice_number && inv.invoice_number.startsWith('CLM-')) ||
+        (inv.payment_option && inv.payment_option.toLowerCase() === 'claim')
+      );
+      const docType = isDocClaim ? 'claim' : 'invoice';
       const patientId = inv.patient || (inv.patient_name ? inv.patient_name.trim().toLowerCase() : `pat_${inv.id}`);
-      const groupKey = `${patientId}_${itemDateStr}`;
+      const groupKey = `${patientId}_${itemDateStr}_${docType}`;
 
       const qty = Number(inv.qty || 1);
       const lineTotal = Number(inv.price || 0);
@@ -1722,13 +1833,15 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
         : (qty > 0 ? (lineTotal / qty) : lineTotal);
 
       const encMatch = encounterQueue.find((e) => e.patient_id === inv.patient || (inv.hospital_number && e.hospital_number === inv.hospital_number));
-      const isInvHmo = inv.is_hmo === true || (inv.invoice_number && inv.invoice_number.startsWith('CLM-')) || encMatch?.is_hmo;
-      const patientSponsor = (inv.sponsor && inv.sponsor !== 'Self-Pay / Cash')
-        ? inv.sponsor
-        : (encMatch?.sponsor && encMatch.sponsor !== 'Self-Pay / Cash')
-          ? encMatch.sponsor
-          : (inv.plan && inv.plan !== 'Standard Plan' ? inv.plan : (isInvHmo ? 'HMO Sponsor' : 'Self-Pay / Cash'));
-      const patientPlan = inv.plan || encMatch?.plan || (isInvHmo ? 'HMO Plan' : 'Standard Plan');
+      const isInvHmo = isDocClaim;
+      const patientSponsor = isDocClaim
+        ? ((inv.sponsor && !inv.sponsor.toLowerCase().includes('self-pay') && !inv.sponsor.toLowerCase().includes('cash'))
+            ? inv.sponsor
+            : (encMatch?.sponsor || 'HMO Sponsor'))
+        : (inv.sponsor || 'PAY FROM PURSE / CASH');
+      const patientPlan = isDocClaim
+        ? (inv.plan || encMatch?.plan || 'HMO Plan')
+        : 'OUT-OF-POCKET TARIFF';
       const patientPolicy = inv.policy_number || encMatch?.policy_number || 'NIL';
       const patientPhone = inv.phone_number || encMatch?.phone_number || 'N/A';
       const patientAge = inv.age || encMatch?.age || '36';
@@ -1739,11 +1852,13 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
         map.set(groupKey, {
           id: inv.id,
           group_key: groupKey,
+          is_doc_claim: isDocClaim,
+          doc_type: docType,
           patient: inv.patient,
           patient_name: inv.patient_name || encMatch?.patient_name || (inv.patient ? `Patient #${inv.patient}` : 'Patient'),
           hospital_number: inv.hospital_number || encMatch?.hospital_number || 'N/A',
           sponsor: patientSponsor,
-          category: inv.category_name || (typeof inv.category === 'object' ? inv.category?.category : inv.category) || encMatch?.category || (isInvHmo ? 'HMO' : 'Private'),
+          category: isDocClaim ? (encMatch?.category || 'HMO') : 'Private (Pay from purse)',
           plan: patientPlan,
           policy_number: patientPolicy,
           enrollee_number: inv.enrollee_number || patientPolicy,
@@ -1770,7 +1885,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
       if (inv.staff_name) {
         grp.staff_name = inv.staff_name;
       }
-      if (inv.sponsor && inv.sponsor !== 'Self-Pay / Cash') {
+      if (isDocClaim && inv.sponsor && inv.sponsor !== 'Self-Pay / Cash') {
         grp.sponsor = inv.sponsor;
       }
       if (inv.plan && inv.plan !== 'Standard Plan') {
@@ -1781,7 +1896,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
       }
       if (inv.invoice_number) {
         grp.invoice_numbers_set.add(inv.invoice_number);
-        if (!grp.primary_invoice_number || (inv.invoice_number.startsWith('CLM-') && !grp.primary_invoice_number.startsWith('CLM-'))) {
+        if (!grp.primary_invoice_number) {
           grp.primary_invoice_number = inv.invoice_number;
         }
       }
@@ -1823,9 +1938,9 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
         is_partial: isPartial,
       };
     }).sort((a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0));
-  }, [invoices, invoiceDateFilter]);
+  }, [invoices, invoiceDateFilter, invoiceStartDate, invoiceEndDate]);
 
-  // Filtered Grouped Invoices by sub-menu, status and search
+  // Filtered Grouped Invoices by sub-menu, status, sponsor and search
   const filteredGroupedInvoices = useMemo(() => {
     return groupedInvoices.filter((grp) => {
       if (activeSubMenu === 'outstanding') {
@@ -1837,6 +1952,15 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
         if (invoiceStatusFilter === 'paid' && !grp.completed) return false;
       }
 
+      // Sponsor Filter
+      if (sponsorFilter && sponsorFilter.trim()) {
+        const sf = sponsorFilter.trim().toLowerCase();
+        const grpSponsor = (grp.sponsor || '').toLowerCase();
+        if (!grpSponsor.includes(sf)) {
+          return false;
+        }
+      }
+
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       const matchesInvNo = grp.invoice_numbers_list.some((n) => n.toLowerCase().includes(q)) || grp.invoice_number.toLowerCase().includes(q);
@@ -1846,27 +1970,91 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
       const matchesItems = grp.items.some((it) => it.product && it.product.toLowerCase().includes(q));
       return matchesInvNo || matchesPatient || matchesHosp || matchesSponsor || matchesItems;
     });
-  }, [groupedInvoices, activeSubMenu, invoiceStatusFilter, searchQuery]);
+  }, [groupedInvoices, activeSubMenu, invoiceStatusFilter, searchQuery, sponsorFilter]);
 
-  // Pending Consolidated Invoices Count for active date filter
-  const pendingInvoicesCount = useMemo(() => {
-    const todayStr = getTodayStr();
-    const map = new Map();
-    for (const inv of invoices) {
-      if (!inv.completed) {
-        const itemDateStr = getInvoiceDateStr(inv.created_date) || todayStr;
-        if (invoiceDateFilter === 'today' && itemDateStr !== todayStr) continue;
-        if (invoiceDateFilter !== 'today' && invoiceDateFilter !== 'all' && itemDateStr !== invoiceDateFilter) continue;
-        const patId = inv.patient ? String(inv.patient) : (inv.patient_name || 'unknown');
-        map.set(`${patId}_${itemDateStr}`, true);
-      }
+  // Helpers to test items against active filters for metrics
+  const isDateInInvoiceFilter = (dateVal) => {
+    if (invoiceDateFilter === 'all') return true;
+    const itemDateStr = getInvoiceDateStr(dateVal) || getTodayStr();
+    if (invoiceDateFilter === 'today') return itemDateStr === getTodayStr();
+    if (invoiceDateFilter === 'range') {
+      if (invoiceStartDate && itemDateStr < invoiceStartDate) return false;
+      if (invoiceEndDate && itemDateStr > invoiceEndDate) return false;
+      return true;
     }
-    return map.size;
-  }, [invoices, invoiceDateFilter]);
+    return itemDateStr === invoiceDateFilter;
+  };
 
-  // Summary Metrics
-  const totalInvoiced = invoices.reduce((sum, i) => sum + Number(i.price || 0), 0);
-  const totalReceipted = receipts.reduce((sum, r) => sum + Number(r.total_price || 0), 0);
+  const isSponsorInInvoiceFilter = (sponsorVal) => {
+    if (!sponsorFilter || !sponsorFilter.trim()) return true;
+    const sf = sponsorFilter.trim().toLowerCase();
+    const sp = String(sponsorVal || '').toLowerCase();
+    return sp.includes(sf);
+  };
+
+  // Dynamic Invoices for Top Metrics based on active Date, Sponsor, and Search filters
+  const filteredInvoicesForMetrics = useMemo(() => {
+    return invoices.filter((inv) => {
+      if (!isDateInInvoiceFilter(inv.created_date)) return false;
+      if (!isSponsorInInvoiceFilter(inv.sponsor)) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matches = (
+          (inv.invoice_number && inv.invoice_number.toLowerCase().includes(q)) ||
+          (inv.patient_name && inv.patient_name.toLowerCase().includes(q)) ||
+          (inv.hospital_number && inv.hospital_number.toLowerCase().includes(q)) ||
+          (inv.product && inv.product.toLowerCase().includes(q))
+        );
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [invoices, invoiceDateFilter, invoiceStartDate, invoiceEndDate, sponsorFilter, searchQuery]);
+
+  const totalInvoiced = useMemo(() => {
+    return filteredInvoicesForMetrics.reduce((sum, i) => sum + Number(i.price || 0), 0);
+  }, [filteredInvoicesForMetrics]);
+
+  // Dynamic Receipts for Top Metrics based on active Date, Sponsor, and Search filters
+  const filteredReceiptsForMetrics = useMemo(() => {
+    return receipts.filter((rec) => {
+      if (!isDateInInvoiceFilter(rec.created_date)) return false;
+      if (!isSponsorInInvoiceFilter(rec.sponsor)) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matches = (
+          (rec.receipt_number && rec.receipt_number.toLowerCase().includes(q)) ||
+          (rec.invoice_number && rec.invoice_number.toLowerCase().includes(q)) ||
+          (rec.patient_name && rec.patient_name.toLowerCase().includes(q)) ||
+          (rec.payment_type && rec.payment_type.toLowerCase().includes(q)) ||
+          (rec.remarks && rec.remarks.toLowerCase().includes(q))
+        );
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [receipts, invoiceDateFilter, invoiceStartDate, invoiceEndDate, sponsorFilter, searchQuery]);
+
+  const totalReceipted = useMemo(() => {
+    return filteredReceiptsForMetrics.reduce((sum, r) => sum + Number(r.total_price || 0), 0);
+  }, [filteredReceiptsForMetrics]);
+
+  // Dynamic Pending Invoices Count and Amount based on active filters
+  const { pendingInvoicesCount, pendingInvoicesAmount } = useMemo(() => {
+    const pendingGroups = filteredGroupedInvoices.filter((grp) => !grp.completed);
+    const amount = pendingGroups.reduce((sum, g) => sum + Number(g.total_amount || 0), 0);
+    return {
+      pendingInvoicesCount: pendingGroups.length,
+      pendingInvoicesAmount: amount,
+    };
+  }, [filteredGroupedInvoices]);
+
+  // Dynamic Encounters in Queue Count matching Sponsor Filter
+  const filteredEncounterQueueCount = useMemo(() => {
+    if (!sponsorFilter || !sponsorFilter.trim()) return encounterQueue.length;
+    const sf = sponsorFilter.trim().toLowerCase();
+    return encounterQueue.filter((enc) => (enc.sponsor || '').toLowerCase().includes(sf)).length;
+  }, [encounterQueue, sponsorFilter]);
 
   // Flat Filtered Invoices (legacy reference)
   const filteredInvoices = invoices.filter((inv) => {
@@ -1883,24 +2071,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
     );
   });
 
-  const filteredReceipts = useMemo(() => {
-    const todayStr = getTodayStr();
-    return receipts.filter((rec) => {
-      const recDateStr = getInvoiceDateStr(rec.created_date) || todayStr;
-      if (receiptDateFilter === 'today' && recDateStr !== todayStr) return false;
-      if (receiptDateFilter !== 'today' && receiptDateFilter !== 'all' && recDateStr !== receiptDateFilter) return false;
-
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      return (
-        (rec.receipt_number && rec.receipt_number.toLowerCase().includes(q)) ||
-        (rec.invoice_number && rec.invoice_number.toLowerCase().includes(q)) ||
-        (rec.patient_name && rec.patient_name.toLowerCase().includes(q)) ||
-        (rec.payment_type && rec.payment_type.toLowerCase().includes(q)) ||
-        (rec.remarks && rec.remarks.toLowerCase().includes(q))
-      );
-    });
-  }, [receipts, receiptDateFilter, searchQuery]);
+  const filteredReceipts = filteredReceiptsForMetrics;
 
   return (
     <div className="container-fluid py-3">
@@ -2013,7 +2184,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                   className="font-weight-bold mt-1"
                   style={{ fontSize: '1.5rem', color: '#0f172a', lineHeight: 1 }}
                 >
-                  {encounterQueue.length}
+                  {filteredEncounterQueueCount}
                 </div>
               </div>
               <div
@@ -2035,8 +2206,8 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
               </div>
             </div>
             <div className="d-flex align-items-center justify-content-between pt-1.5 border-top" style={{ borderColor: '#f1f5f9', gap: '6px' }}>
-              <span className="small text-muted text-truncate" style={{ fontSize: '0.73rem', whiteSpace: 'nowrap' }}>
-                Active doctor orders
+              <span className="small text-muted text-truncate" style={{ fontSize: '0.73rem', whiteSpace: 'nowrap' }} title={sponsorFilter || 'Active doctor orders'}>
+                {sponsorFilter ? sponsorFilter : 'Active doctor orders'}
               </span>
               <span
                 className="badge font-weight-bold flex-shrink-0"
@@ -2110,8 +2281,8 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
               </div>
             </div>
             <div className="d-flex align-items-center justify-content-between pt-1.5 border-top" style={{ borderColor: '#f1f5f9', gap: '6px' }}>
-              <span className="small text-muted text-truncate" style={{ fontSize: '0.73rem', whiteSpace: 'nowrap' }}>
-                Awaiting payment
+              <span className="small text-muted text-truncate" style={{ fontSize: '0.73rem', whiteSpace: 'nowrap' }} title={`₦${pendingInvoicesAmount.toLocaleString()} awaiting payment`}>
+                {pendingInvoicesAmount > 0 ? `₦${pendingInvoicesAmount.toLocaleString()} pending` : 'All bills settled'}
               </span>
               <span
                 className="badge font-weight-bold flex-shrink-0"
@@ -2186,7 +2357,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
             </div>
             <div className="d-flex align-items-center justify-content-between pt-1.5 border-top" style={{ borderColor: '#f1f5f9', gap: '6px' }}>
               <span className="small text-muted text-truncate" style={{ fontSize: '0.73rem', whiteSpace: 'nowrap' }}>
-                All generated bills
+                {invoiceDateFilter === 'today' ? "Today's billed" : (invoiceDateFilter === 'all' ? "All generated bills" : (invoiceDateFilter === 'range' ? `${invoiceStartDate || 'Start'} to ${invoiceEndDate || 'End'}` : `${invoiceDateFilter} bills`))}
               </span>
               <span
                 className="badge font-weight-bold flex-shrink-0"
@@ -2261,7 +2432,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
             </div>
             <div className="d-flex align-items-center justify-content-between pt-1.5 border-top" style={{ borderColor: '#f1f5f9', gap: '6px' }}>
               <span className="small text-muted text-truncate" style={{ fontSize: '0.73rem', whiteSpace: 'nowrap' }}>
-                Recorded payments
+                {invoiceDateFilter === 'today' ? "Today's collections" : (invoiceDateFilter === 'all' ? "Recorded payments" : (invoiceDateFilter === 'range' ? `${invoiceStartDate || 'Start'} to ${invoiceEndDate || 'End'}` : `${invoiceDateFilter} collections`))}
               </span>
               <span
                 className="badge font-weight-bold flex-shrink-0"
@@ -2587,7 +2758,30 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                     }}
                   >
                     <i className={`fas ${invoiceDateFilter === 'today' ? 'fa-calendar-check' : 'fa-calendar-alt'} mr-1`}></i>
-                    {invoiceDateFilter === 'today' ? `Today (${filteredGroupedInvoices.length} patient invoice${filteredGroupedInvoices.length === 1 ? '' : 's'})` : (invoiceDateFilter === 'all' ? `All Dates (${filteredGroupedInvoices.length})` : `${invoiceDateFilter} (${filteredGroupedInvoices.length})`)}
+                    {invoiceDateFilter === 'today'
+                      ? `Today (${filteredGroupedInvoices.length} patient invoice${filteredGroupedInvoices.length === 1 ? '' : 's'})`
+                      : (invoiceDateFilter === 'all'
+                        ? `All Dates (${filteredGroupedInvoices.length})`
+                        : (invoiceDateFilter === 'range'
+                          ? `${invoiceStartDate || 'Start'} to ${invoiceEndDate || 'End'} (${filteredGroupedInvoices.length})`
+                          : `${invoiceDateFilter} (${filteredGroupedInvoices.length})`))}
+                  </span>
+                )}
+                {sponsorFilter && (
+                  <span
+                    className="badge badge-light border px-2 py-1 ml-1 text-primary font-weight-bold"
+                    style={{ fontSize: '0.72rem', borderRadius: '12px' }}
+                  >
+                    <i className="fas fa-shield-alt mr-1"></i> Sponsor: {sponsorFilter}
+                    <button
+                      type="button"
+                      className="btn btn-link p-0 ml-1.5 text-danger font-weight-bold"
+                      style={{ fontSize: '0.75rem', lineHeight: 1, textDecoration: 'none' }}
+                      onClick={() => setSponsorFilter('')}
+                      title="Clear Sponsor filter"
+                    >
+                      &times;
+                    </button>
                   </span>
                 )}
               </div>
@@ -2629,7 +2823,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                     </div>
                   )}
 
-                  {/* Date Filter for Invoices */}
+                  {/* Date Filter for Invoices (Today | All Dates | From Date to Date) */}
                   {(activeSubMenu === 'outstanding' || activeSubMenu === 'complete') && (
                     <div className="d-flex align-items-center flex-wrap" style={{ gap: '6px' }}>
                       <span className="text-muted font-weight-bold mr-1" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -2640,18 +2834,14 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                           type="button"
                           className={`btn btn-sm ${invoiceDateFilter === 'today' ? 'btn-primary font-weight-bold shadow-xs' : 'btn-light text-secondary'}`}
                           style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '4px' }}
-                          onClick={() => setInvoiceDateFilter('today')}
+                          onClick={() => {
+                            setInvoiceDateFilter('today');
+                            setInvoiceStartDate(getTodayStr());
+                            setInvoiceEndDate(getTodayStr());
+                          }}
                         >
                           Today
                         </button>
-                        <input
-                          type="date"
-                          className="form-control form-control-sm border-0 bg-transparent text-secondary"
-                          style={{ width: '130px', fontSize: '0.78rem', height: '26px', padding: '0 6px' }}
-                          value={invoiceDateFilter === 'today' ? getTodayStr() : (invoiceDateFilter === 'all' ? '' : invoiceDateFilter)}
-                          onChange={(e) => setInvoiceDateFilter(e.target.value || 'today')}
-                          title="Filter by specific invoice date"
-                        />
                         <button
                           type="button"
                           className={`btn btn-sm ${invoiceDateFilter === 'all' ? 'btn-secondary font-weight-bold' : 'btn-light text-secondary'}`}
@@ -2661,6 +2851,67 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                           All Dates
                         </button>
                       </div>
+
+                      {/* From Date to Date Inputs */}
+                      <div className="d-flex align-items-center bg-white border rounded px-2 py-0.5 shadow-2xs" style={{ gap: '4px', borderRadius: '6px' }}>
+                        <span className="text-muted font-weight-bold" style={{ fontSize: '0.74rem' }}>From:</span>
+                        <input
+                          type="date"
+                          className="form-control form-control-sm border-0 bg-transparent text-secondary p-0"
+                          style={{ width: '122px', fontSize: '0.76rem', height: '24px' }}
+                          value={invoiceStartDate}
+                          onChange={(e) => {
+                            setInvoiceStartDate(e.target.value);
+                            setInvoiceDateFilter('range');
+                          }}
+                          title="Filter from start date"
+                        />
+                        <span className="text-muted font-weight-bold" style={{ fontSize: '0.74rem' }}>To:</span>
+                        <input
+                          type="date"
+                          className="form-control form-control-sm border-0 bg-transparent text-secondary p-0"
+                          style={{ width: '122px', fontSize: '0.76rem', height: '24px' }}
+                          value={invoiceEndDate}
+                          onChange={(e) => {
+                            setInvoiceEndDate(e.target.value);
+                            setInvoiceDateFilter('range');
+                          }}
+                          title="Filter to end date"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sponsor Filter for Invoices */}
+                  {(activeSubMenu === 'outstanding' || activeSubMenu === 'complete') && (
+                    <div className="d-flex align-items-center bg-white border rounded px-2 py-0.5 shadow-2xs" style={{ gap: '6px', borderRadius: '6px' }}>
+                      <span className="text-muted font-weight-bold" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <i className="fas fa-shield-alt text-primary mr-1"></i> Sponsor:
+                      </span>
+                      <select
+                        className="form-control form-control-sm border-0 bg-transparent text-secondary font-weight-semibold p-0"
+                        style={{ minWidth: '150px', maxWidth: '210px', fontSize: '0.78rem', height: '24px' }}
+                        value={sponsorFilter}
+                        onChange={(e) => setSponsorFilter(e.target.value)}
+                        title="Filter by Sponsor"
+                      >
+                        <option value="">All Sponsors</option>
+                        {availableSponsors.map((sp) => (
+                          <option key={sp} value={sp}>
+                            {sp}
+                          </option>
+                        ))}
+                      </select>
+                      {sponsorFilter && (
+                        <button
+                          type="button"
+                          className="btn btn-link btn-sm p-0 text-muted ml-1"
+                          onClick={() => setSponsorFilter('')}
+                          title="Clear sponsor filter"
+                        >
+                          <i className="fas fa-times-circle text-danger"></i>
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -3601,7 +3852,10 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                                     <button
                                       type="button"
                                       className="btn btn-outline-success btn-sm px-2 font-weight-bold"
-                                      onClick={() => handleMarkGroupAsPaid(grp)}
+                                      onClick={() => {
+                                        setPayConfirmGroup(grp);
+                                        setPayConfirmMethod(grp.payment_option || 'Cash');
+                                      }}
                                       title={`Record Payment for all items on this day's invoice (${grp.invoice_number})`}
                                     >
                                       <i className="fas fa-check-circle mr-1"></i> Pay
@@ -4237,6 +4491,17 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                                     <i className="fas fa-pause-circle mr-1"></i> REMAIN IN QUEUE
                                   </span>
                                 )}
+                                {isHmoEncounter && (
+                                  (item.payment_option || '').toLowerCase() === 'claim' ? (
+                                    <span className="badge badge-info px-1.5 py-0.5 mr-2 font-weight-bold" style={{ fontSize: '0.68rem', backgroundColor: '#0284c7', whiteSpace: 'nowrap' }} title="Covered under HMO Plan (generates HMO Claim)">
+                                      <i className="fas fa-shield-alt mr-1"></i> HMO CLAIM
+                                    </span>
+                                  ) : (
+                                    <span className="badge badge-warning px-1.5 py-0.5 mr-2 font-weight-bold text-dark border border-warning" style={{ fontSize: '0.68rem', backgroundColor: '#fef08a', whiteSpace: 'nowrap' }} title="Not Covered under HMO Plan (patient pays from purse, generates Invoice)">
+                                      <i className="fas fa-wallet mr-1"></i> PAY FROM PURSE
+                                    </span>
+                                  )
+                                )}
                                 <input
                                   type="text"
                                   className="form-control form-control-sm border-0 font-weight-bold"
@@ -4316,18 +4581,24 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                             {/* Payment Option */}
                             <td>
                               <select
-                                className="form-control form-control-sm"
+                                className="form-control form-control-sm font-weight-bold"
+                                style={{
+                                  color: (item.payment_option || '').toLowerCase() === 'claim' ? '#0369a1' : '#b45309',
+                                  backgroundColor: (item.payment_option || '').toLowerCase() === 'claim' ? '#f0f9ff' : '#fefce8',
+                                  borderColor: (item.payment_option || '').toLowerCase() === 'claim' ? '#bae6fd' : '#fde68a',
+                                }}
                                 value={item.payment_option}
                                 onChange={(e) => handleItemFieldChange(item.temp_id, 'payment_option', e.target.value)}
                               >
-                                <option value="Claim">Claim</option>
-                                <option value="Cash">Cash</option>
-                                <option value="Transfer">Transfer</option>
-                                <option value="POS">POS</option>
+                                {isHmoEncounter && <option value="Claim">Claim (HMO Plan)</option>}
+                                <option value="Cash">{isHmoEncounter ? 'Cash (Pay from purse)' : 'Cash'}</option>
+                                <option value="Transfer">{isHmoEncounter ? 'Transfer (Pay from purse)' : 'Transfer'}</option>
+                                <option value="POS">{isHmoEncounter ? 'POS (Pay from purse)' : 'POS'}</option>
                                 <option value="Cheque">Cheque</option>
                                 <option value="Bank Deposit">Bank Deposit</option>
                                 <option value="Staff Salary">Staff Salary</option>
                                 <option value="Capitation">Capitation</option>
+                                {!isHmoEncounter && <option value="Claim">Claim</option>}
                               </select>
                             </td>
 
@@ -4401,12 +4672,39 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                       </div>
                     )}
 
-                    <div className="pl-3 border-left">
-                      <span className="text-muted small d-block">Net Total Payable:</span>
-                      <strong className="text-success h5 mb-0 font-weight-bold">
-                        ₦{netTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </strong>
-                    </div>
+                    {isSplitBilling ? (
+                      <>
+                        <div className="pl-3 border-left">
+                          <span className="text-muted small d-block">
+                            <i className="fas fa-shield-alt text-info mr-1"></i> HMO Claim Total:
+                          </span>
+                          <strong className="text-primary font-weight-bold" style={{ fontSize: '1rem' }}>
+                            ₦{claimBilledTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </strong>
+                          <span className="badge badge-light border text-primary ml-1" style={{ fontSize: '0.7rem' }}>
+                            {claimBilledItems.length} item(s)
+                          </span>
+                        </div>
+                        <div className="pl-3 border-left">
+                          <span className="text-muted small d-block">
+                            <i className="fas fa-wallet text-warning mr-1"></i> Patient Out-of-Pocket:
+                          </span>
+                          <strong className="text-danger font-weight-bold" style={{ fontSize: '1rem' }}>
+                            ₦{purseBilledTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </strong>
+                          <span className="badge badge-warning text-dark ml-1" style={{ fontSize: '0.7rem' }}>
+                            {purseBilledItems.length} item(s)
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="pl-3 border-left">
+                        <span className="text-muted small d-block">Net Total Payable:</span>
+                        <strong className="text-success h5 mb-0 font-weight-bold">
+                          ₦{netTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </strong>
+                      </div>
+                    )}
                   </div>
 
                   {/* Action Buttons */}
@@ -4427,14 +4725,22 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                         className="btn btn-primary px-4 shadow-sm font-weight-bold d-inline-flex align-items-center"
                         style={{
                           borderRadius: '6px',
-                          background: isHmoEncounter
+                          background: isSplitBilling
+                            ? 'linear-gradient(135deg, #0284c7 0%, #059669 100%)'
+                            : isHmoEncounter
                             ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)'
                             : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                           border: 'none',
                         }}
                         onClick={handleCreateBill}
                         disabled={generatingBill || billedItemsOnly.length === 0}
-                        title={isHmoEncounter ? "Create HMO Claims bill for submission" : "Create official private patient invoice"}
+                        title={
+                          isSplitBilling
+                            ? "Generates an HMO Claim for plan-covered items and a Patient Invoice for out-of-pocket items"
+                            : isHmoEncounter
+                            ? "Create HMO Claims bill for submission"
+                            : "Create official private patient invoice"
+                        }
                       >
                         {generatingBill ? (
                           <>
@@ -4442,8 +4748,12 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                           </>
                         ) : (
                           <>
-                            <i className={`fas ${isHmoEncounter ? 'fa-file-medical-alt' : 'fa-file-invoice-dollar'} mr-1.5`}></i>
-                            Create Bill {isHmoEncounter ? '(HMO Claim)' : '(Invoice)'}
+                            <i className={`fas ${isSplitBilling ? 'fa-copy' : isHmoEncounter ? 'fa-file-medical-alt' : 'fa-file-invoice-dollar'} mr-1.5`}></i>
+                            {isSplitBilling
+                              ? 'Create Bill (HMO Claim & Patient Invoice)'
+                              : isHmoEncounter
+                              ? (claimBilledItems.length === 0 ? 'Create Bill (Patient Invoice)' : 'Create Bill (HMO Claim)')
+                              : 'Create Bill (Invoice)'}
                           </>
                         )}
                       </button>
@@ -4833,10 +5143,12 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                 </div>
                 <div>
                   <h5 className="mb-0 font-weight-bold" style={{ fontSize: '1.05rem', letterSpacing: '-0.01em', color: '#14532d' }}>
-                    Bill Created Successfully!
+                    {billSuccessData.has_split ? 'Claim & Invoice Created Successfully!' : 'Bill Created Successfully!'}
                   </h5>
                   <div className="text-muted small" style={{ fontSize: '0.78rem' }}>
-                    {billSuccessData.is_hmo ? 'HMO Claim' : 'Patient Invoice'} recorded in billing system
+                    {billSuccessData.has_split
+                      ? '1 HMO Claim (Plan items) & 1 Patient Invoice (Pay from purse items)'
+                      : (billSuccessData.is_hmo ? 'HMO Claim recorded in billing system' : 'Patient Invoice recorded in billing system')}
                   </div>
                 </div>
               </div>
@@ -4862,36 +5174,91 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                   fontSize: '0.85rem',
                 }}
               >
-                <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
-                  <span className="text-muted">Document Number:</span>
-                  <span className="font-weight-bold text-primary font-mono" style={{ fontSize: '1rem' }}>
-                    {billSuccessData.invoice_number}
-                  </span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
-                  <span className="text-muted">Patient:</span>
-                  <span className="font-weight-bold text-dark text-uppercase">
-                    {billSuccessData.patient_name} [{billSuccessData.hospital_number}]
-                  </span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
-                  <span className="text-muted">Sponsor:</span>
-                  <span className="font-weight-bold text-dark">
-                    {billSuccessData.sponsor}
-                  </span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
-                  <span className="text-muted">Items Billed:</span>
-                  <span className="font-weight-bold text-dark">
-                    {billSuccessData.items_count} item(s)
-                  </span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center pt-2 mt-1">
-                  <span className="font-weight-bold text-dark" style={{ fontSize: '0.95rem' }}>Total Amount:</span>
-                  <span className="font-weight-bold text-success" style={{ fontSize: '1.2rem' }}>
-                    ₦{Number(billSuccessData.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                {billSuccessData.has_split ? (
+                  <>
+                    <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
+                      <span className="text-muted">Patient:</span>
+                      <span className="font-weight-bold text-dark text-uppercase">
+                        {billSuccessData.patient_name} [{billSuccessData.hospital_number}]
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
+                      <span className="text-muted">Sponsor / Plan:</span>
+                      <span className="font-weight-bold text-dark">
+                        {billSuccessData.sponsor} ({billSuccessData.plan})
+                      </span>
+                    </div>
+
+                    {/* Split Documents Breakdown */}
+                    <div className="my-2 p-2.5 rounded border" style={{ backgroundColor: '#f0f9ff', borderColor: '#bae6fd' }}>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <span className="font-weight-bold text-info" style={{ fontSize: '0.82rem' }}>
+                          <i className="fas fa-shield-alt mr-1"></i> HMO Claim ({billSuccessData.claim_number})
+                        </span>
+                        <span className="font-weight-bold text-primary font-mono">
+                          ₦{Number(billSuccessData.claim_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="text-muted small" style={{ fontSize: '0.74rem' }}>
+                        {billSuccessData.claim_items_count} item(s) covered under sponsor plan
+                      </div>
+                    </div>
+
+                    <div className="my-2 p-2.5 rounded border" style={{ backgroundColor: '#fefce8', borderColor: '#fde68a' }}>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <span className="font-weight-bold text-warning" style={{ fontSize: '0.82rem' }}>
+                          <i className="fas fa-wallet mr-1"></i> Patient Invoice ({billSuccessData.invoice_number})
+                        </span>
+                        <span className="font-weight-bold text-danger font-mono">
+                          ₦{Number(billSuccessData.inv_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="text-muted small" style={{ fontSize: '0.74rem' }}>
+                        {billSuccessData.inv_items_count} item(s) not covered (patient pays from purse)
+                      </div>
+                    </div>
+
+                    <div className="d-flex justify-content-between align-items-center pt-2 mt-1 border-top">
+                      <span className="font-weight-bold text-dark" style={{ fontSize: '0.95rem' }}>Combined Total:</span>
+                      <span className="font-weight-bold text-success" style={{ fontSize: '1.2rem' }}>
+                        ₦{Number(billSuccessData.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
+                      <span className="text-muted">Document Number:</span>
+                      <span className="font-weight-bold text-primary font-mono" style={{ fontSize: '1rem' }}>
+                        {billSuccessData.invoice_number || billSuccessData.claim_number}
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
+                      <span className="text-muted">Patient:</span>
+                      <span className="font-weight-bold text-dark text-uppercase">
+                        {billSuccessData.patient_name} [{billSuccessData.hospital_number}]
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
+                      <span className="text-muted">Sponsor:</span>
+                      <span className="font-weight-bold text-dark">
+                        {billSuccessData.sponsor}
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center py-1.5 border-bottom border-light">
+                      <span className="text-muted">Items Billed:</span>
+                      <span className="font-weight-bold text-dark">
+                        {billSuccessData.items_count} item(s)
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center pt-2 mt-1">
+                      <span className="font-weight-bold text-dark" style={{ fontSize: '0.95rem' }}>Total Amount:</span>
+                      <span className="font-weight-bold text-success" style={{ fontSize: '1.2rem' }}>
+                        ₦{Number(billSuccessData.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div
@@ -4907,7 +5274,7 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
 
             {/* Footer */}
             <div
-              className="py-3 px-4 d-flex justify-content-end align-items-center"
+              className="py-3 px-4 d-flex justify-content-end align-items-center flex-wrap"
               style={{
                 backgroundColor: '#f8fafc',
                 borderTop: '1px solid #e2e8f0',
@@ -4922,26 +5289,65 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
               >
                 Done
               </button>
-              {billSuccessData.preview_data && (
-                <button
-                  type="button"
-                  className="btn btn-primary px-4 font-weight-bold shadow-sm"
-                  style={{
-                    borderRadius: '8px',
-                    background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                    border: 'none',
-                  }}
-                  onClick={() => {
-                    if (billSuccessData.is_hmo) {
-                      setPreviewHmoClaim(billSuccessData.preview_data);
-                    } else {
-                      setPreviewPrivateInvoice(billSuccessData.preview_data);
-                    }
-                    setBillSuccessData(null);
-                  }}
-                >
-                  <i className="fas fa-print mr-1.5"></i> View / Print {billSuccessData.is_hmo ? 'Claim' : 'Invoice'}
-                </button>
+              {billSuccessData.has_split ? (
+                <>
+                  {billSuccessData.claim_preview_data && (
+                    <button
+                      type="button"
+                      className="btn btn-info px-3 font-weight-bold shadow-sm"
+                      style={{
+                        borderRadius: '8px',
+                        background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                        border: 'none',
+                      }}
+                      onClick={() => {
+                        setPreviewHmoClaim(billSuccessData.claim_preview_data);
+                        setBillSuccessData(null);
+                      }}
+                    >
+                      <i className="fas fa-file-medical-alt mr-1.5"></i> View / Print HMO Claim
+                    </button>
+                  )}
+                  {billSuccessData.invoice_preview_data && (
+                    <button
+                      type="button"
+                      className="btn btn-success px-3 font-weight-bold shadow-sm"
+                      style={{
+                        borderRadius: '8px',
+                        background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                        border: 'none',
+                      }}
+                      onClick={() => {
+                        setPreviewPrivateInvoice(billSuccessData.invoice_preview_data);
+                        setBillSuccessData(null);
+                      }}
+                    >
+                      <i className="fas fa-receipt mr-1.5"></i> View / Print Patient Invoice
+                    </button>
+                  )}
+                </>
+              ) : (
+                billSuccessData.preview_data && (
+                  <button
+                    type="button"
+                    className="btn btn-primary px-4 font-weight-bold shadow-sm"
+                    style={{
+                      borderRadius: '8px',
+                      background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                      border: 'none',
+                    }}
+                    onClick={() => {
+                      if (billSuccessData.is_hmo) {
+                        setPreviewHmoClaim(billSuccessData.preview_data);
+                      } else {
+                        setPreviewPrivateInvoice(billSuccessData.preview_data);
+                      }
+                      setBillSuccessData(null);
+                    }}
+                  >
+                    <i className="fas fa-print mr-1.5"></i> View / Print {billSuccessData.is_hmo ? 'Claim' : 'Invoice'}
+                  </button>
+                )
               )}
             </div>
           </div>
@@ -5037,6 +5443,221 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
               >
                 Understood
               </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ========================================================= */}
+      {/* PAY CONFIRMATION MODAL                                    */}
+      {/* ========================================================= */}
+      {payConfirmGroup && (
+        <>
+          <div
+            className="modal-backdrop fade show"
+            style={{
+              zIndex: 1060,
+              backgroundColor: 'rgba(15, 23, 42, 0.72)',
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => !isProcessingPayment && setPayConfirmGroup(null)}
+          />
+          <div className="modal fade show d-block" tabIndex="-1" style={{ zIndex: 1065 }}>
+            <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '520px', width: '94%', margin: '1.5rem auto' }}>
+              <div
+                className="modal-content border-0 shadow-2xl"
+                style={{
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.4)',
+                }}
+              >
+                {/* Header */}
+                <div
+                  className="px-4 py-3 text-white d-flex align-items-center justify-content-between"
+                  style={{
+                    background: 'linear-gradient(135deg, #065f46 0%, #047857 55%, #059669 100%)',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                  }}
+                >
+                  <div className="d-flex align-items-center" style={{ gap: '12px' }}>
+                    <div
+                      className="rounded-circle d-flex align-items-center justify-content-center text-white"
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                        fontSize: '1.15rem',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fas fa-cash-register"></i>
+                    </div>
+                    <div>
+                      <h5 className="font-weight-bold mb-0 text-white" style={{ fontSize: '1.05rem', letterSpacing: '-0.01em' }}>
+                        Confirm Payment
+                      </h5>
+                      <span className="text-white-50 small" style={{ fontSize: '0.74rem' }}>
+                        Invoice #{payConfirmGroup.invoice_number} &bull; {payConfirmGroup.date_str}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm text-white rounded-circle d-flex align-items-center justify-content-center"
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      padding: 0,
+                      background: 'rgba(255, 255, 255, 0.15)',
+                      border: 'none',
+                    }}
+                    onClick={() => !isProcessingPayment && setPayConfirmGroup(null)}
+                    disabled={isProcessingPayment}
+                    title="Close"
+                  >
+                    <i className="fas fa-times" style={{ fontSize: '1rem' }}></i>
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="p-4 bg-white" style={{ maxHeight: 'calc(85vh - 120px)', overflowY: 'auto' }}>
+                  {/* Question Prompt */}
+                  <div
+                    className="p-3 mb-3 rounded-lg d-flex align-items-center"
+                    style={{
+                      backgroundColor: '#f0fdf4',
+                      border: '1px solid #bbf7d0',
+                    }}
+                  >
+                    <i className="fas fa-question-circle text-success mr-2.5 flex-shrink-0" style={{ fontSize: '1.35rem' }}></i>
+                    <div className="text-dark small">
+                      Do you want to confirm and record payment for <strong>{payConfirmGroup.patient_name}</strong>?
+                    </div>
+                  </div>
+
+                  {/* Total Amount Highlight Banner */}
+                  <div
+                    className="p-3 mb-3 rounded-lg text-center"
+                    style={{
+                      backgroundColor: '#ecfdf5',
+                      border: '1.5px solid #86efac',
+                    }}
+                  >
+                    <span className="text-muted small text-uppercase font-weight-bold d-block mb-1">
+                      Total Payable Amount
+                    </span>
+                    <h2
+                      className="font-weight-bold mb-0 text-success font-mono"
+                      style={{ letterSpacing: '-0.02em', fontSize: '1.9rem' }}
+                    >
+                      ₦{Number(payConfirmGroup.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </h2>
+                  </div>
+
+                  {/* Patient Details */}
+                  <div className="bg-light p-3 rounded mb-3 small border">
+                    <div className="d-flex justify-content-between mb-1.5">
+                      <span className="text-muted font-weight-semibold">Patient:</span>
+                      <strong className="text-dark">
+                        {payConfirmGroup.patient_name} <span className="text-primary font-weight-bold">({payConfirmGroup.hospital_number})</span>
+                      </strong>
+                    </div>
+                    <div className="d-flex justify-content-between mb-1.5">
+                      <span className="text-muted font-weight-semibold">Sponsor / Plan:</span>
+                      <span className="text-dark font-weight-semibold">
+                        {payConfirmGroup.sponsor || payConfirmGroup.plan || 'Self-Pay / Cash'}
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between">
+                      <span className="text-muted font-weight-semibold">Items Count:</span>
+                      <span className="badge badge-secondary px-2 py-1">
+                        {payConfirmGroup.items ? payConfirmGroup.items.length : 0} Item(s)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Payment Method Selector */}
+                  <div className="form-group mb-3">
+                    <label className="font-weight-bold small text-dark mb-1">
+                      Payment Method <span className="text-danger">*</span>
+                    </label>
+                    <select
+                      className="form-control form-control-sm font-weight-semibold"
+                      value={payConfirmMethod}
+                      onChange={(e) => setPayConfirmMethod(e.target.value)}
+                      disabled={isProcessingPayment}
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="POS">POS Terminal</option>
+                      <option value="Transfer">Bank Transfer</option>
+                      <option value="Purse">Patient Purse / Deposit</option>
+                      <option value="Cheque">Cheque</option>
+                    </select>
+                  </div>
+
+                  {/* Items summary */}
+                  {payConfirmGroup.items && payConfirmGroup.items.length > 0 && (
+                    <div className="mb-2">
+                      <label className="font-weight-bold small text-muted text-uppercase mb-1" style={{ fontSize: '0.72rem' }}>
+                        Included Invoice Items
+                      </label>
+                      <div className="border rounded p-2" style={{ maxHeight: '120px', overflowY: 'auto', backgroundColor: '#fcfcfc', fontSize: '0.8rem' }}>
+                        {payConfirmGroup.items.map((it, idx) => (
+                          <div key={idx} className="d-flex justify-content-between align-items-center py-1 border-bottom last-border-0">
+                            <span className="text-truncate mr-2" style={{ maxWidth: '70%' }}>
+                              {it.product} {it.qty > 1 ? `(x${it.qty})` : ''}
+                            </span>
+                            <strong className="text-dark">₦{Number(it.lineTotal !== undefined ? it.lineTotal : it.price || 0).toLocaleString()}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div
+                  className="px-4 py-3 bg-light d-flex justify-content-end align-items-center"
+                  style={{
+                    borderTop: '1px solid #e2e8f0',
+                    gap: '10px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary px-3 font-weight-semibold"
+                    style={{ borderRadius: '8px', fontSize: '0.85rem' }}
+                    onClick={() => setPayConfirmGroup(null)}
+                    disabled={isProcessingPayment}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-success px-4 font-weight-bold shadow-sm d-inline-flex align-items-center"
+                    style={{
+                      borderRadius: '8px',
+                      fontSize: '0.85rem',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      border: 'none',
+                      boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
+                    }}
+                    onClick={() => handleMarkGroupAsPaid(payConfirmGroup, payConfirmMethod)}
+                    disabled={isProcessingPayment}
+                  >
+                    {isProcessingPayment ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-1.5"></i> Processing Payment...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-check-circle mr-1.5"></i> Yes, Confirm Payment
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </>
@@ -6050,14 +6671,10 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
                       border: '1px solid #e2e8f0',
                     }}
                   >
-                    {/* Top Session and attribution */}
-                    <div className="d-flex justify-content-between align-items-start mb-2" style={{ fontSize: '11px' }}>
+                    {/* Top Session */}
+                    <div className="mb-2" style={{ fontSize: '11px' }}>
                       <div className="font-weight-bold text-uppercase">
                         {previewHmoClaim.patient_name} [ {previewHmoClaim.hospital_number} ] - SESSION #: {previewHmoClaim.session_number}
-                      </div>
-                      <div className="text-right text-muted" style={{ fontSize: '10px' }}>
-                        <div>Document generated by e'Clinic+</div>
-                        <div>www.eclathealthcare.com</div>
                       </div>
                     </div>
 

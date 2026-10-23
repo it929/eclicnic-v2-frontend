@@ -226,6 +226,33 @@ export default function DoctorConsultationModal({
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [discarding, setDiscarding] = useState(false);
 
+  // Doctor Authorization PIN State
+  const [currentDoctorUser, setCurrentDoctorUser] = useState(() => {
+    try {
+      const userStr = localStorage.getItem('clinic365_user');
+      return userStr ? JSON.parse(userStr) : null;
+    } catch (_) {
+      return null;
+    }
+  });
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [doctorPin, setDoctorPin] = useState('');
+  const [showDoctorPin, setShowDoctorPin] = useState(false);
+  const [pinError, setPinError] = useState('');
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const pinInputRef = useRef(null);
+
+  useEffect(() => {
+    if (showPinModal) {
+      const t = setTimeout(() => {
+        if (pinInputRef.current) {
+          pinInputRef.current.focus();
+        }
+      }, 120);
+      return () => clearTimeout(t);
+    }
+  }, [showPinModal]);
+
   // Clinical Medication Prescription state
   const [prescriptions, setPrescriptions] = useState([]);
   const [drugName, setDrugName] = useState('');
@@ -554,6 +581,22 @@ export default function DoctorConsultationModal({
     (typeof patientDetails?.plan === 'object' ? patientDetails?.plan?.plan : '') ||
     '';
 
+  const currentSponsorId =
+    (typeof patientDetails?.sponsor === 'number' ? patientDetails?.sponsor : patientDetails?.sponsor?.id) ||
+    patientDetails?.sponsor_id ||
+    (typeof patient?.sponsor === 'number' ? patient?.sponsor : patient?.sponsor?.id) ||
+    patient?.sponsor_id ||
+    appointment?.sponsor ||
+    appointment?.sponsor_id;
+
+  const currentPlanId =
+    (typeof patientDetails?.plan === 'number' ? patientDetails?.plan : patientDetails?.plan?.id) ||
+    patientDetails?.plan_id ||
+    (typeof patient?.plan === 'number' ? patient?.plan : patient?.plan?.id) ||
+    patient?.plan_id ||
+    appointment?.plan ||
+    appointment?.plan_id;
+
   const patientCategory = (
     patientDetails?.category_name ||
     (typeof patientDetails?.category === 'object' ? patientDetails?.category?.category : '') ||
@@ -574,15 +617,34 @@ export default function DoctorConsultationModal({
     ''
   ).toLowerCase();
 
-  const isPrivatePatient = Boolean(
-    !currentSponsorName ||
+  const isExplicitlyPrivate = Boolean(
     patientCategory.includes('private') ||
+    patientCategory.includes('self') ||
     sponsorCategory.includes('private') ||
-    currentSponsorName.toLowerCase().includes('private') ||
-    currentSponsorName.toLowerCase().includes('self')
+    sponsorCategory.includes('self') ||
+    (currentSponsorName && (
+      currentSponsorName.toLowerCase().includes('private') ||
+      currentSponsorName.toLowerCase().includes('self')
+    ))
   );
 
-  const isHmoPatient = !isPrivatePatient && Boolean(currentSponsorName);
+  const isPrivatePatient = Boolean(
+    isExplicitlyPrivate ||
+    (!currentSponsorName && !currentSponsorId && !currentPlanId)
+  );
+
+  const isHmoPatient = !isPrivatePatient && Boolean(currentSponsorName || currentSponsorId || currentPlanId);
+
+  // Auto-align default tariff modes whenever HMO patient is detected:
+  // HMO/Sponsor patients must ALWAYS default to 'covered' (HMO Formulary).
+  // The doctor only switches to General Tariff ('Pay from purse') if a specific item is not covered.
+  useEffect(() => {
+    if (isHmoPatient) {
+      setTariffMode('covered');
+      setLabTariffMode('covered');
+      setRadiologyTariffMode('covered');
+    }
+  }, [isHmoPatient]);
 
   // Load covered medications attached to this patient's Sponsor and Plan AND general out-of-pocket prices
   const loadPatientMedicationTariffs = async (pId, sId, plId, searchQuery = '') => {
@@ -605,11 +667,16 @@ export default function DoctorConsultationModal({
       setCoveredMedications(coveredList);
       setGeneralMedications(generalList);
 
-      // Auto-set tariffMode: Private patients always default to General Price; HMO patients default to covered
-      if (isPrivatePatient) {
-        setTariffMode('general');
-      } else {
-        setTariffMode('covered');
+      // Default tariffMode logic:
+      // HMO/Sponsor patients ALWAYS default to 'covered' (HMO Formulary).
+      // Only strictly private/self-pay patients (no sponsor or plan) default to 'general'.
+      if (!searchQuery) {
+        const hasCoverage = coveredList.length > 0 || Boolean(sId || plId || currentSponsorId || currentPlanId || currentSponsorName);
+        if (hasCoverage && !isExplicitlyPrivate) {
+          setTariffMode('covered');
+        } else {
+          setTariffMode('general');
+        }
       }
     } catch (err) {
       console.error('Error loading medication tariffs for sponsor/plan & general:', err);
@@ -639,10 +706,13 @@ export default function DoctorConsultationModal({
       setCoveredLabTariffs(coveredList);
       setGeneralLabTariffs(generalList);
 
-      if (isPrivatePatient) {
-        setLabTariffMode('general');
-      } else {
-        setLabTariffMode('covered');
+      if (!searchQuery) {
+        const hasCoverage = coveredList.length > 0 || Boolean(sId || plId || currentSponsorId || currentPlanId || currentSponsorName);
+        if (hasCoverage && !isExplicitlyPrivate) {
+          setLabTariffMode('covered');
+        } else {
+          setLabTariffMode('general');
+        }
       }
     } catch (err) {
       console.error('Error loading covered laboratory tariffs for sponsor/plan & general:', err);
@@ -672,10 +742,13 @@ export default function DoctorConsultationModal({
       setCoveredRadiologyTariffs(coveredList);
       setGeneralRadiologyTariffs(generalList);
 
-      if (isPrivatePatient) {
-        setRadiologyTariffMode('general');
-      } else {
-        setRadiologyTariffMode('covered');
+      if (!searchQuery) {
+        const hasCoverage = coveredList.length > 0 || Boolean(sId || plId || currentSponsorId || currentPlanId || currentSponsorName);
+        if (hasCoverage && !isExplicitlyPrivate) {
+          setRadiologyTariffMode('covered');
+        } else {
+          setRadiologyTariffMode('general');
+        }
       }
     } catch (err) {
       console.error('Error loading covered radiology tariffs for sponsor/plan & general:', err);
@@ -726,6 +799,24 @@ export default function DoctorConsultationModal({
         activePatient?.plan?.id ||
         (typeof activePatient?.plan === 'number' ? activePatient?.plan : null) ||
         appointment?.plan;
+
+      const sponsorName =
+        activePatient?.sponsor_name ||
+        (typeof activePatient?.sponsor === 'object' ? activePatient?.sponsor?.name : '') ||
+        appointment?.sponsor_name ||
+        '';
+
+      const isPatientHmo = Boolean(
+        (sponsorId || planId || sponsorName) &&
+        !sponsorName.toLowerCase().includes('private') &&
+        !sponsorName.toLowerCase().includes('self')
+      );
+
+      if (isPatientHmo) {
+        setTariffMode('covered');
+        setLabTariffMode('covered');
+        setRadiologyTariffMode('covered');
+      }
 
       // Concurrently load all 4 departments: medications, lab, radiology & other clinical services
       await Promise.all([
@@ -1706,111 +1797,75 @@ export default function DoctorConsultationModal({
   const handleAddInvestigation = handleAddLabOrder;
   const handleRemoveInvestigation = handleRemoveLabOrder;
 
-  const handleSaveConsultation = async (isCompleting = false) => {
+  const handleInitiateComplete = () => {
     // If completing the consultation, validate compulsory primary diagnosis
-    if (isCompleting) {
-      if (!primaryDiagnosis.trim()) {
-        setDiagnosisError(true);
-        if (activeTab !== 'notes') {
-          setActiveTab('notes');
-        }
-        showToast(
-          'Primary Diagnosis is compulsory to complete consultation! Please select or enter a diagnosis.',
-          'warning',
-          'Diagnosis Compulsory'
-        );
-        if (diagnosisDropdownRef.current) {
-          const input = diagnosisDropdownRef.current.querySelector('input');
-          if (input) input.focus();
-        }
-        return;
+    if (!primaryDiagnosis.trim()) {
+      setDiagnosisError(true);
+      if (activeTab !== 'notes') {
+        setActiveTab('notes');
       }
-      setDiagnosisError(false);
+      showToast(
+        'Primary Diagnosis is compulsory to complete consultation! Please select or enter a diagnosis.',
+        'warning',
+        'Diagnosis Compulsory'
+      );
+      if (diagnosisDropdownRef.current) {
+        const input = diagnosisDropdownRef.current.querySelector('input');
+        if (input) input.focus();
+      }
+      return;
+    }
+    setDiagnosisError(false);
+
+    // Open Doctor Security PIN Authorization Modal
+    setDoctorPin('');
+    setShowDoctorPin(false);
+    setPinError('');
+    setShowPinModal(true);
+  };
+
+  const handleAuthorizeAndComplete = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+
+    const cleanPin = (doctorPin || '').trim();
+    if (!cleanPin) {
+      setPinError('Security PIN is required. Please enter your PIN to authorize and sign this consultation.');
+      if (pinInputRef.current) pinInputRef.current.focus();
+      return;
     }
 
-    // If saving draft, ensure at least one field has been documented
-    if (!isCompleting) {
-      const hasAnyContent =
-        selectedComplaints.length > 0 ||
-        Boolean(customComplaint && customComplaint.trim()) ||
-        Boolean(historyOfIllness && historyOfIllness.trim()) ||
-        Boolean(physicalExam && physicalExam.trim()) ||
-        Boolean(primaryDiagnosis && primaryDiagnosis.trim()) ||
-        Boolean(diagnosisComments && diagnosisComments.trim()) ||
-        Boolean(treatmentPlan && treatmentPlan.trim()) ||
-        Boolean(followUpDate && followUpDate.trim()) ||
-        prescriptions.length > 0 ||
-        labOrders.length > 0 ||
-        radiologyOrders.length > 0 ||
-        otherServiceOrders.length > 0;
-
-      if (!hasAnyContent) {
-        showToast(
-          'Nothing to save in draft. Please document at least one clinical note, complaint, diagnosis, or order.',
-          'warning',
-          'Empty Draft'
-        );
-        return;
-      }
-
-      try {
-        setSaving(true);
-        const draftPayload = {
-          selectedComplaints,
-          customComplaint,
-          historyOfIllness,
-          physicalExam,
-          primaryDiagnosis,
-          icd11Code,
-          diagnosisComments,
-          treatmentPlan,
-          followUpDate,
-          prescriptions,
-          labOrders,
-          radiologyOrders,
-          otherServiceOrders,
-          _savedAt: new Date().toISOString(),
-        };
-
-        // 1. Save to local storage for instant offline recovery
-        if (patientId) {
-          localStorage.setItem(`clinic365_consultation_draft_${patientId}`, JSON.stringify(draftPayload));
-        }
-
-        // 2. Persist to backend database so doctor can resume on any computer/browser
-        await api.saveConsultationDraft({
-          patient: patientId,
-          appointment: appointment?.id || null,
-          draft_data: draftPayload,
-        });
-
-        setHasActiveDraft(true);
-        setDraftSavedAt(new Date().toISOString());
-
-        showToast(
-          `Consultation draft for ${patientName} saved successfully! When you return, you will see everything you documented and continue from there.`,
-          'success',
-          'Draft Saved'
-        );
-
-        if (onConsultationFinished) {
-          onConsultationFinished();
-        }
-
-        onClose();
-        return;
-      } catch (err) {
-        console.error('Error saving consultation draft:', err);
-        showToast(err.response?.data?.detail || err.message || 'Error saving consultation draft', 'danger', 'Draft Error');
-        return;
-      } finally {
-        setSaving(false);
-      }
+    if (!/^\d+$/.test(cleanPin)) {
+      setPinError('PIN must contain numeric digits only.');
+      if (pinInputRef.current) pinInputRef.current.focus();
+      return;
     }
 
-    // Completing consultation (isCompleting === true)
+    setPinError('');
+    setIsAuthorizing(true);
     try {
-      setSaving(true);
+      await executeCompleteConsultation(cleanPin);
+      setShowPinModal(false);
+      setDoctorPin('');
+    } catch (err) {
+      console.error('Error completing consultation with PIN:', err);
+      const errMsg =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        'Authorization failed. Please check your Security PIN.';
+      setPinError(errMsg);
+      if (pinInputRef.current) {
+        pinInputRef.current.focus();
+        pinInputRef.current.select();
+      }
+    } finally {
+      setIsAuthorizing(false);
+    }
+  };
+
+  const executeCompleteConsultation = async (authorizedPin) => {
+    setSaving(true);
+    try {
       const complaintsString = selectedComplaints.join(', ');
       const combinedHistory = [
         historyOfIllness ? `HPI: ${historyOfIllness}` : '',
@@ -1826,9 +1881,12 @@ export default function DoctorConsultationModal({
         prescriptions.length > 0
           ? `PRESCRIPTIONS:\n${prescriptions
               .map((p, i) => {
-                const planTag = p.is_covered
+                const isPurse = Boolean(p.is_pay_from_purse || p.payment_mode === 'pay_from_purse' || !p.is_covered);
+                const planTag = isPurse
+                  ? ` [Pay from your purse: ₦${Number(p.tariff_rate || 0).toLocaleString()}]`
+                  : p.is_covered
                   ? ` [Covered: ₦${Number(p.tariff_rate).toLocaleString()} under ${p.plan_name || 'HMO Plan'}]`
-                  : ' [Out-of-Pocket / Non-Tariff]';
+                  : ' [Pay from your purse]';
                 const disp = p.dispense_detail ? ` - Dispense: ${p.dispense_detail}` : '';
                 const cmt = p.comment ? ` (Note: ${p.comment})` : '';
                 const routeTag = p.route ? ` via ${p.route}` : '';
@@ -1839,11 +1897,11 @@ export default function DoctorConsultationModal({
         labOrders.length > 0
           ? `LABORATORY ORDERS:\n${labOrders
               .map((l, i) => {
-                const tag = l.is_pay_from_purse
+                const tag = (l.is_pay_from_purse || !l.is_covered)
                   ? ` [Pay from your purse: ₦${Number(l.tariff_rate || 0).toLocaleString()}]`
                   : l.is_covered
                   ? ` [Covered: ₦${Number(l.tariff_rate).toLocaleString()} under ${l.plan_name || 'HMO Plan'}]`
-                  : ' [Out-of-Pocket]';
+                  : ' [Pay from your purse]';
                 return `${i + 1}. ${l.test}${l.item_id ? ` (${l.item_id})` : ''}${tag}`;
               })
               .join('\n')}`
@@ -1851,11 +1909,11 @@ export default function DoctorConsultationModal({
         radiologyOrders.length > 0
           ? `RADIOLOGY & IMAGING ORDERS:\n${radiologyOrders
               .map((r, i) => {
-                const tag = r.is_pay_from_purse
+                const tag = (r.is_pay_from_purse || !r.is_covered)
                   ? ` [Pay from your purse: ₦${Number(r.tariff_rate || 0).toLocaleString()}]`
                   : r.is_covered
                   ? ` [Covered: ₦${Number(r.tariff_rate).toLocaleString()} under ${r.plan_name || 'HMO Plan'}]`
-                  : ' [Out-of-Pocket]';
+                  : ' [Pay from your purse]';
                 return `${i + 1}. ${r.scan}${r.item_id ? ` (${r.item_id})` : ''}${tag}`;
               })
               .join('\n')}`
@@ -1863,9 +1921,12 @@ export default function DoctorConsultationModal({
         otherServiceOrders.length > 0
           ? `OTHER CLINICAL SERVICES:\n${otherServiceOrders
               .map((s, i) => {
-                const tag = s.is_covered
+                const isPurse = Boolean(s.is_pay_from_purse || s.payment_mode === 'pay_from_purse' || !s.is_covered);
+                const tag = isPurse
+                  ? ` [Pay from your purse: ₦${Number(s.tariff_rate || 0).toLocaleString()}]`
+                  : s.is_covered
                   ? ` [Covered: ₦${Number(s.tariff_rate).toLocaleString()} under ${s.plan_name || 'HMO Plan'}]`
-                  : ' [Out-of-Pocket]';
+                  : ' [Pay from your purse]';
                 const notesTag = s.notes ? ` - Instructions: ${s.notes}` : '';
                 return `${i + 1}. ${s.service}${s.service_id ? ` (${s.service_id})` : ''}${notesTag}${tag}`;
               })
@@ -1879,12 +1940,15 @@ export default function DoctorConsultationModal({
         ? (icd11Code.trim() ? `${primaryDiagnosis.trim()} [ICD-11: ${icd11Code.trim()}]` : primaryDiagnosis.trim())
         : '';
 
-      await api.createEncounter({
+      const encounterRes = await api.createEncounter({
         patient: patientId,
         chief_complaint: complaintsString,
         history_of_present_illness: combinedHistory,
         diagnosis: finalDiagnosis,
         comments_on_diagnosis: combinedComments,
+        pin_code: authorizedPin,
+        doctor_id: currentDoctorUser?.id,
+        doctor_username: currentDoctorUser?.username,
       });
 
       // Also persist structured prescriptions to database so Pharmacy Queue immediately has the exact pieces/bottles!
@@ -1892,23 +1956,34 @@ export default function DoctorConsultationModal({
         try {
           await api.bulkSavePrescriptions({
             patient_id: patientId,
-            prescriptions: prescriptions.map((p) => ({
-              drug: p.drug,
-              dosage_form: p.dosage_form,
-              route: p.route || 'Oral',
-              strength: p.strength,
-              dose_qty: p.dose_qty,
-              dose_unit: p.dose_unit,
-              frequency: p.frequency,
-              duration: p.duration_val || p.duration,
-              duration_unit: p.duration_unit,
-              dispense_unit: p.dispense_unit,
-              dispense_quantity: p.dispense_quantity,
-              dispense_detail: p.dispense_detail,
-              comment: p.comment,
-              start_date: p.start_date,
-              instruction: `${p.dose_qty} ${p.dose_unit} via ${p.route || 'Oral'}, ${p.frequency} for ${p.duration}${p.comment ? ` - ${p.comment}` : ''}`,
-            })),
+            doctor_id: currentDoctorUser?.id,
+            doctor_username: currentDoctorUser?.username,
+            prescriptions: prescriptions.map((p) => {
+              const purseTag = Boolean(p.is_pay_from_purse || p.payment_mode === 'pay_from_purse' || !p.is_covered);
+              const cleanCmt = purseTag
+                ? (p.comment ? `[Pay from your purse] ${p.comment}` : '[Pay from your purse]')
+                : (p.comment || '');
+              return {
+                drug: p.drug,
+                dosage_form: p.dosage_form,
+                route: p.route || 'Oral',
+                strength: p.strength,
+                dose_qty: p.dose_qty,
+                dose_unit: p.dose_unit,
+                frequency: p.frequency,
+                duration: p.duration_val || p.duration,
+                duration_unit: p.duration_unit,
+                dispense_unit: p.dispense_unit,
+                dispense_quantity: p.dispense_quantity,
+                dispense_detail: p.dispense_detail,
+                comment: cleanCmt,
+                start_date: p.start_date,
+                is_pay_from_purse: purseTag,
+                payment_mode: purseTag ? 'pay_from_purse' : 'covered',
+                payment_option: purseTag ? 'Cash' : 'Claim',
+                instruction: `${p.dose_qty} ${p.dose_unit} via ${p.route || 'Oral'}, ${p.frequency} for ${p.duration}${cleanCmt ? ` - ${cleanCmt}` : ''}`,
+              };
+            }),
           });
         } catch (rxErr) {
           console.warn('Prescriptions saved in consultation notes, error syncing to pharmacy queue:', rxErr);
@@ -1927,9 +2002,41 @@ export default function DoctorConsultationModal({
         try {
           billResult = await api.saveConsultationOrders({
             patient_id: patientId,
-            prescriptions,
-            lab_orders: labOrders,
-            radiology_orders: radiologyOrders,
+            doctor_id: currentDoctorUser?.id,
+            doctor_username: currentDoctorUser?.username,
+            prescriptions: prescriptions.map((p) => {
+              const isPurse = Boolean(p.is_pay_from_purse || p.payment_mode === 'pay_from_purse' || !p.is_covered);
+              return {
+                ...p,
+                is_pay_from_purse: isPurse,
+                payment_option: isPurse ? 'Cash' : 'Claim',
+                comment: isPurse
+                  ? (p.comment ? `[Pay from your purse] ${p.comment}` : '[Pay from your purse]')
+                  : (p.comment || ''),
+              };
+            }),
+            lab_orders: labOrders.map((l) => {
+              const isPurse = l.is_pay_from_purse || l.payment_mode === 'pay_from_purse';
+              return {
+                ...l,
+                is_pay_from_purse: isPurse,
+                payment_option: isPurse ? 'Cash' : 'Claim',
+                comment: isPurse
+                  ? (l.comment ? `[Pay from your purse] ${l.comment}` : '[Pay from your purse]')
+                  : (l.comment || ''),
+              };
+            }),
+            radiology_orders: radiologyOrders.map((r) => {
+              const isPurse = r.is_pay_from_purse || r.payment_mode === 'pay_from_purse';
+              return {
+                ...r,
+                is_pay_from_purse: isPurse,
+                payment_option: isPurse ? 'Cash' : 'Claim',
+                comment: isPurse
+                  ? (r.comment ? `[Pay from your purse] ${r.comment}` : '[Pay from your purse]')
+                  : (r.comment || ''),
+              };
+            }),
             other_service_orders: otherServiceOrders,
           });
           console.log('Consultation orders routed to Encounters Billing:', billResult);
@@ -1951,14 +2058,15 @@ export default function DoctorConsultationModal({
         await api.clearConsultationDraft(patientId);
       } catch (_) {}
 
+      const doctorDisplayName = encounterRes?.provider_name || currentDoctorUser?.fullname || currentDoctorUser?.username || 'Doctor';
       const billMsg = billResult && billResult.total_items
         ? ` (${billResult.total_items} clinical item(s) routed to Billing Queue for cashier)`
         : '';
 
       showToast(
-        `Doctor Consultation for ${patientName} completed successfully!${billMsg}`,
+        `Doctor Consultation for ${patientName} completed & signed by ${doctorDisplayName}!${billMsg}`,
         'success',
-        'Consultation Completed & Routed to Billing'
+        'Consultation Completed & Authorized'
       );
 
       if (onConsultationFinished) {
@@ -1966,9 +2074,92 @@ export default function DoctorConsultationModal({
       }
 
       onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveConsultation = async (isCompleting = false) => {
+    // If completing the consultation, route to PIN authorization flow
+    if (isCompleting) {
+      handleInitiateComplete();
+      return;
+    }
+
+    // If saving draft, ensure at least one field has been documented
+    const hasAnyContent =
+      selectedComplaints.length > 0 ||
+      Boolean(customComplaint && customComplaint.trim()) ||
+      Boolean(historyOfIllness && historyOfIllness.trim()) ||
+      Boolean(physicalExam && physicalExam.trim()) ||
+      Boolean(primaryDiagnosis && primaryDiagnosis.trim()) ||
+      Boolean(diagnosisComments && diagnosisComments.trim()) ||
+      Boolean(treatmentPlan && treatmentPlan.trim()) ||
+      Boolean(followUpDate && followUpDate.trim()) ||
+      prescriptions.length > 0 ||
+      labOrders.length > 0 ||
+      radiologyOrders.length > 0 ||
+      otherServiceOrders.length > 0;
+
+    if (!hasAnyContent) {
+      showToast(
+        'Nothing to save in draft. Please document at least one clinical note, complaint, diagnosis, or order.',
+        'warning',
+        'Empty Draft'
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const draftPayload = {
+        selectedComplaints,
+        customComplaint,
+        historyOfIllness,
+        physicalExam,
+        primaryDiagnosis,
+        icd11Code,
+        diagnosisComments,
+        treatmentPlan,
+        followUpDate,
+        prescriptions,
+        labOrders,
+        radiologyOrders,
+        otherServiceOrders,
+        _savedAt: new Date().toISOString(),
+      };
+
+      // 1. Save to local storage for instant offline recovery
+      if (patientId) {
+        localStorage.setItem(`clinic365_consultation_draft_${patientId}`, JSON.stringify(draftPayload));
+      }
+
+      // 2. Persist to backend database so doctor can resume on any computer/browser
+      await api.saveConsultationDraft({
+        patient: patientId,
+        appointment: appointment?.id || null,
+        draft_data: draftPayload,
+      });
+
+      setHasActiveDraft(true);
+      setDraftSavedAt(new Date().toISOString());
+
+      showToast(
+        `Consultation draft for ${patientName} saved successfully! When you return, you will see everything you documented and continue from there.`,
+        'success',
+        'Draft Saved'
+      );
+
+      if (onConsultationFinished) {
+        onConsultationFinished();
+      }
+
+      onClose();
+      return;
     } catch (err) {
-      console.error('Error saving consultation:', err);
-      showToast(err.response?.data?.detail || err.message || 'Error saving consultation', 'danger', 'Save Error');
+      console.error('Error saving consultation draft:', err);
+      showToast(err.response?.data?.detail || err.message || 'Error saving consultation draft', 'danger', 'Draft Error');
+      return;
     } finally {
       setSaving(false);
     }
@@ -6105,10 +6296,14 @@ export default function DoctorConsultationModal({
                 border: 'none',
                 boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
               }}
-              onClick={() => handleSaveConsultation(true)}
-              disabled={saving}
+              onClick={handleInitiateComplete}
+              disabled={saving || isAuthorizing}
             >
-              {saving ? <i className="fas fa-spinner fa-spin mr-1.5"></i> : <i className="fas fa-check-circle mr-1.5"></i>}
+              {saving || isAuthorizing ? (
+                <i className="fas fa-spinner fa-spin mr-1.5"></i>
+              ) : (
+                <i className="fas fa-check-circle mr-1.5"></i>
+              )}
               Finish &amp; Complete Consultation
             </button>
           </div>
@@ -6257,6 +6452,239 @@ export default function DoctorConsultationModal({
                 )}
               </button>
             </div>
+          </div>
+        </>
+      )}
+      {/* Doctor Security PIN Authorization Modal */}
+      {showPinModal && (
+        <>
+          <div
+            className="modal-backdrop-custom"
+            style={{
+              zIndex: 1080,
+              backgroundColor: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => !isAuthorizing && setShowPinModal(false)}
+          />
+          <div
+            className="card shadow-2xl modal-custom"
+            style={{
+              zIndex: 1090,
+              maxWidth: '500px',
+              width: '92%',
+              borderRadius: '16px',
+              border: '1px solid rgba(226, 232, 240, 0.9)',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.45)',
+              animation: 'modalSlideIn 0.25s ease-out',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              className="px-4 py-3 d-flex align-items-center justify-content-between"
+              style={{
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                color: '#fff',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              }}
+            >
+              <div className="d-flex align-items-center">
+                <div
+                  className="rounded-circle d-flex align-items-center justify-content-center mr-2.5"
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
+                  }}
+                >
+                  <i className="fas fa-user-md text-white" style={{ fontSize: '1.1rem' }}></i>
+                </div>
+                <div>
+                  <h6 className="mb-0 font-weight-bold text-white" style={{ fontSize: '0.98rem' }}>
+                    Doctor Authorization Required
+                  </h6>
+                  <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Enter your security PIN to complete &amp; sign encounter
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-link text-white-50 p-1"
+                style={{ textDecoration: 'none' }}
+                onClick={() => !isAuthorizing && setShowPinModal(false)}
+                disabled={isAuthorizing}
+              >
+                <i className="fas fa-times" style={{ fontSize: '1.1rem' }}></i>
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleAuthorizeAndComplete}>
+              <div className="p-4" style={{ backgroundColor: '#ffffff' }}>
+                {/* Patient Summary Card */}
+                <div
+                  className="p-3 mb-3 rounded-lg"
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '0.82rem',
+                  }}
+                >
+                  <div className="d-flex justify-content-between align-items-center mb-1.5">
+                    <span className="text-muted font-weight-semibold">Patient:</span>
+                    <strong className="text-dark">
+                      {patientName} <span className="text-primary font-weight-bold">({hospitalNumber})</span>
+                    </strong>
+                  </div>
+                  <div className="d-flex justify-content-between align-items-baseline mb-1.5">
+                    <span className="text-muted font-weight-semibold mr-2">Diagnosis:</span>
+                    <span className="text-dark font-weight-bold text-right" style={{ maxWidth: '65%' }}>
+                      {primaryDiagnosis} {icd11Code ? `[${icd11Code}]` : ''}
+                    </span>
+                  </div>
+                  {/* Orders pill summary */}
+                  <div className="d-flex flex-wrap gap-1 mt-2 pt-2 border-top">
+                    {prescriptions.length > 0 && (
+                      <span className="badge badge-pill badge-primary px-2 py-1 mr-1" style={{ fontSize: '0.72rem' }}>
+                        <i className="fas fa-prescription mr-1"></i> {prescriptions.length} Med{prescriptions.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {labOrders.length > 0 && (
+                      <span className="badge badge-pill badge-info px-2 py-1 mr-1" style={{ fontSize: '0.72rem' }}>
+                        <i className="fas fa-vial mr-1"></i> {labOrders.length} Lab{labOrders.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {radiologyOrders.length > 0 && (
+                      <span className="badge badge-pill badge-warning px-2 py-1 mr-1" style={{ fontSize: '0.72rem' }}>
+                        <i className="fas fa-x-ray mr-1"></i> {radiologyOrders.length} Scan{radiologyOrders.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {otherServiceOrders.length > 0 && (
+                      <span className="badge badge-pill badge-secondary px-2 py-1 mr-1" style={{ fontSize: '0.72rem' }}>
+                        <i className="fas fa-stethoscope mr-1"></i> {otherServiceOrders.length} Service{otherServiceOrders.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Attending Doctor Badge */}
+                <div className="d-flex align-items-center justify-content-between mb-3 px-1 text-muted small">
+                  <span>Authorizing Doctor:</span>
+                  <span className="font-weight-bold text-dark">
+                    <i className="fas fa-user-check text-success mr-1"></i>
+                    Dr. {currentDoctorUser?.fullname || currentDoctorUser?.username || 'Attending Physician'}
+                  </span>
+                </div>
+
+                {/* PIN Input Group */}
+                <div className="form-group mb-2">
+                  <label className="font-weight-bold text-dark small mb-1 d-flex justify-content-between align-items-center">
+                    <span>Enter 4-Digit Security PIN <span className="text-danger">*</span></span>
+                    <span className="text-muted" style={{ fontSize: '0.72rem' }}>Confidential</span>
+                  </label>
+                  <div className="input-group input-group-lg shadow-sm" style={{ borderRadius: '10px', overflow: 'hidden' }}>
+                    <div className="input-group-prepend">
+                      <span className="input-group-text bg-light border-right-0 text-muted px-3">
+                        <i className="fas fa-shield-alt text-primary"></i>
+                      </span>
+                    </div>
+                    <input
+                      ref={pinInputRef}
+                      type={showDoctorPin ? 'text' : 'password'}
+                      className="form-control border-left-0 font-weight-bold text-center"
+                      style={{
+                        letterSpacing: showDoctorPin ? 'normal' : '0.35em',
+                        fontSize: '1.25rem',
+                        borderColor: pinError ? '#ef4444' : '#cbd5e1',
+                      }}
+                      placeholder="••••"
+                      maxLength="6"
+                      value={doctorPin}
+                      onChange={(e) => {
+                        setDoctorPin(e.target.value);
+                        if (pinError) setPinError('');
+                      }}
+                      disabled={isAuthorizing}
+                      required
+                      autoFocus
+                    />
+                    <div className="input-group-append">
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary px-3"
+                        style={{ borderColor: '#cbd5e1' }}
+                        onClick={() => setShowDoctorPin((prev) => !prev)}
+                        title={showDoctorPin ? 'Hide PIN' : 'Show PIN'}
+                        tabIndex="-1"
+                      >
+                        <i className={`fas fa-${showDoctorPin ? 'eye-slash' : 'eye'}`}></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Error message */}
+                {pinError && (
+                  <div
+                    className="alert alert-danger py-2 px-3 small d-flex align-items-center mb-2"
+                    style={{ borderRadius: '8px', fontSize: '0.78rem' }}
+                  >
+                    <i className="fas fa-exclamation-triangle mr-2 flex-shrink-0 text-danger"></i>
+                    <div>{pinError}</div>
+                  </div>
+                )}
+
+                <small className="form-text text-muted" style={{ fontSize: '0.73rem', lineHeight: '1.3' }}>
+                  <i className="fas fa-info-circle mr-1 text-primary"></i>
+                  By entering your security PIN, you certify this consultation encounter, approve all prescriptions, and forward orders to billing and relevant departments.
+                </small>
+              </div>
+
+              {/* Footer */}
+              <div
+                className="px-4 py-3 bg-light d-flex justify-content-end align-items-center"
+                style={{
+                  borderTop: '1px solid #e2e8f0',
+                  gap: '10px',
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary px-3 font-weight-semibold"
+                  style={{ borderRadius: '8px', fontSize: '0.85rem' }}
+                  onClick={() => setShowPinModal(false)}
+                  disabled={isAuthorizing}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-success px-4 font-weight-bold shadow-sm d-inline-flex align-items-center"
+                  style={{
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none',
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
+                  }}
+                  disabled={isAuthorizing || !doctorPin.trim()}
+                >
+                  {isAuthorizing ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin mr-1.5"></i> Authorizing &amp; Completing...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-check-circle mr-1.5"></i> Authorize &amp; Finish Consultation
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </>
       )}

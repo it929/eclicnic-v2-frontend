@@ -647,6 +647,11 @@ export default function AppointmentsView({
       gender: appt.patient_gender,
       age: appt.patient_age,
       phone_number: appt.patient_phone,
+      sponsor: appt.sponsor,
+      sponsor_name: appt.sponsor_name,
+      sponsor_category: appt.sponsor_category,
+      plan: appt.plan,
+      plan_name: appt.plan_name,
     };
     setSelectedPatientForConsultation(patObj);
     setSelectedAppointmentForConsultation(appt);
