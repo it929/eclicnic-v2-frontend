@@ -781,20 +781,61 @@ export default function TariffPlansView({
     confirmDelete('sponsor', id, name);
   };
 
+  const [sponsorUploadFile, setSponsorUploadFile] = useState(null);
+  const [sponsorUploadCategory, setSponsorUploadCategory] = useState('');
+  const [downloadingSponsorTemplate, setDownloadingSponsorTemplate] = useState(false);
+  const [sponsorDragOver, setSponsorDragOver] = useState(false);
+
   const handleImportFromExcel = () => {
+    setSponsorUploadFile(null);
+    setSponsorUploadCategory(sponsorCategoryFilter || '');
     setSyncExcelModalOpen(true);
+  };
+
+  const handleDownloadSponsorTemplate = async () => {
+    try {
+      setDownloadingSponsorTemplate(true);
+      const blobData = await api.downloadSponsorsTemplate();
+      const url = window.URL.createObjectURL(new Blob([blobData], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'sponsors_bulk_upload_template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      showAlert('Sponsors bulk upload Excel template downloaded successfully!', 'success');
+    } catch (err) {
+      console.error('Error downloading sponsor template:', err);
+      showAlert('Failed to download sponsor template. Please try again.', 'danger');
+    } finally {
+      setDownloadingSponsorTemplate(false);
+    }
   };
 
   const executeImportFromExcel = async () => {
     try {
       setImportingSponsors(true);
-      const res = await api.importSponsors();
-      showAlert(res.message || 'Sponsors synced successfully from Sponsor.xlsx!');
+      let res;
+      if (sponsorUploadFile) {
+        const formData = new FormData();
+        formData.append('file', sponsorUploadFile);
+        if (sponsorUploadCategory) {
+          formData.append('category_id', sponsorUploadCategory);
+        }
+        res = await api.importSponsors(formData);
+      } else {
+        res = await api.importSponsors();
+      }
+      showAlert(res.message || 'Sponsors imported and synchronized successfully!');
       setSyncExcelModalOpen(false);
+      setSponsorUploadFile(null);
       loadSponsors();
     } catch (err) {
       console.error(err);
-      showAlert(err.response?.data?.detail || 'Failed to import sponsors from Sponsor.xlsx.', 'danger');
+      showAlert(err.response?.data?.detail || err.response?.data?.message || 'Failed to import sponsors.', 'danger');
     } finally {
       setImportingSponsors(false);
     }
@@ -1534,15 +1575,33 @@ export default function TariffPlansView({
                     fontSize: '0.80rem',
                     height: '32px',
                     backgroundColor: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    color: '#475569',
+                  }}
+                  onClick={handleDownloadSponsorTemplate}
+                  disabled={downloadingSponsorTemplate}
+                  title="Download Excel template for bulk sponsor upload"
+                >
+                  <i className={`fas fa-download mr-1 ${downloadingSponsorTemplate ? 'fa-spin' : ''}`}></i>
+                  {downloadingSponsorTemplate ? 'Downloading...' : 'Download Template'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-white font-weight-bold d-inline-flex align-items-center shadow-xs px-3"
+                  style={{
+                    borderRadius: '6px',
+                    fontSize: '0.80rem',
+                    height: '32px',
+                    backgroundColor: '#ffffff',
                     border: '1px solid #10b981',
                     color: '#059669',
                   }}
                   onClick={handleImportFromExcel}
                   disabled={importingSponsors}
-                  title="Import and synchronize all 64 HMO sponsors from Sponsor.xlsx"
+                  title="Bulk upload sponsors from Excel/CSV file or sync from Sponsor.xlsx"
                 >
-                  <i className={`fas fa-file-excel text-success ${importingSponsors ? 'fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
-                  {importingSponsors ? 'Syncing...' : 'Sync from Sponsor.xlsx'}
+                  <i className={`fas fa-file-upload text-success ${importingSponsors ? 'fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
+                  {importingSponsors ? 'Uploading...' : 'Bulk Upload Sponsors'}
                 </button>
                 <button
                   type="button"
@@ -1970,17 +2029,31 @@ export default function TariffPlansView({
                   placeholder="Search name or code..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{ width: '190px' }}
+                  style={{ width: '180px' }}
                 />
 
                 <button
-                  className="btn btn-sm btn-outline-success font-weight-bold mr-2"
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary font-weight-bold mr-2 d-inline-flex align-items-center"
+                  style={{ borderRadius: '6px' }}
+                  onClick={handleDownloadSponsorTemplate}
+                  disabled={downloadingSponsorTemplate}
+                  title="Download Excel template with sample format for bulk upload"
+                >
+                  <i className={`fas fa-download mr-1 ${downloadingSponsorTemplate ? 'fa-spin' : ''}`}></i>
+                  {downloadingSponsorTemplate ? 'Downloading...' : 'Template'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-success font-weight-bold mr-2 d-inline-flex align-items-center"
+                  style={{ borderRadius: '6px' }}
                   onClick={handleImportFromExcel}
                   disabled={importingSponsors}
-                  title="Import from Sponsor.xlsx in root"
+                  title="Upload Excel/CSV file or sync from Sponsor.xlsx"
                 >
-                  <i className={`fas fa-file-excel mr-1 ${importingSponsors ? 'fa-spin' : ''}`}></i>
-                  {importingSponsors ? 'Syncing...' : 'Sync Sponsor.xlsx'}
+                  <i className={`fas fa-file-upload mr-1 ${importingSponsors ? 'fa-spin' : ''}`}></i>
+                  {importingSponsors ? 'Uploading...' : 'Bulk Upload'}
                 </button>
 
                 <button
@@ -6895,26 +6968,39 @@ export default function TariffPlansView({
       )}
 
       {/* ======================================================== */}
-      {/* SYNC EXCEL CONFIRMATION MODAL                            */}
+      {/* BULK UPLOAD SPONSORS MODAL                                */}
       {/* ======================================================== */}
       {syncExcelModalOpen && (
         <div
           className="modal fade show d-block"
           tabIndex="-1"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1060 }}
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1060 }}
         >
-          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '480px', margin: '1.75rem auto' }}>
-            <div className="modal-content shadow-lg border-0" style={{ borderRadius: '12px', overflow: 'hidden' }}>
-              <div className="modal-header bg-success text-white py-3 px-4 align-items-center">
-                <h5 className="modal-title font-weight-bold text-white mb-0 d-flex align-items-center">
-                  <i className="fas fa-file-excel mr-2 text-warning"></i>
-                  Sync Sponsors from Sponsor.xlsx
-                </h5>
+          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '620px', margin: '1.75rem auto' }}>
+            <div className="modal-content shadow-lg border-0" style={{ borderRadius: '14px', overflow: 'hidden' }}>
+              <div
+                className="modal-header py-3 px-4 align-items-center text-white"
+                style={{
+                  background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+                }}
+              >
+                <div>
+                  <h5 className="modal-title font-weight-bold text-white mb-0 d-flex align-items-center" style={{ fontSize: '1.15rem' }}>
+                    <i className="fas fa-file-excel mr-2 text-warning"></i>
+                    Bulk Upload Hospital Sponsors
+                  </h5>
+                  <p className="small text-white-50 mb-0 mt-1">
+                    Upload an Excel (.xlsx) or CSV file containing your sponsors, billing codes, and categories.
+                  </p>
+                </div>
                 <button
                   type="button"
                   className="close text-white"
                   aria-label="Close"
-                  onClick={() => setSyncExcelModalOpen(false)}
+                  onClick={() => {
+                    setSyncExcelModalOpen(false);
+                    setSponsorUploadFile(null);
+                  }}
                   disabled={importingSponsors}
                   style={{ textShadow: 'none', opacity: 0.9, fontSize: '1.4rem' }}
                 >
@@ -6922,47 +7008,177 @@ export default function TariffPlansView({
                 </button>
               </div>
 
-              <div className="modal-body p-4 text-center">
+              <div className="modal-body p-4">
+                {/* Download Template Banner */}
                 <div
-                  className="rounded-circle d-inline-flex align-items-center justify-content-center mb-3 shadow-sm"
-                  style={{
-                    width: '68px',
-                    height: '68px',
-                    backgroundColor: '#e6f7ef',
-                    color: '#1cc88a',
-                    border: '2px solid #b7eb8f',
-                  }}
+                  className="p-3 mb-3 d-flex align-items-center justify-content-between rounded border"
+                  style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}
                 >
-                  <i className="fas fa-sync-alt fa-2x"></i>
+                  <div className="d-flex align-items-center">
+                    <div
+                      className="rounded-circle d-flex align-items-center justify-content-center mr-3"
+                      style={{ width: '40px', height: '40px', backgroundColor: '#dcfce7', color: '#16a34a' }}
+                    >
+                      <i className="fas fa-file-excel fa-lg"></i>
+                    </div>
+                    <div>
+                      <div className="font-weight-bold text-dark" style={{ fontSize: '0.90rem' }}>
+                        Need the official template?
+                      </div>
+                      <div className="text-muted small">
+                        Download the pre-formatted Excel template with sample HMO &amp; Corporate sponsors.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-success font-weight-bold shadow-xs px-3 text-nowrap"
+                    onClick={handleDownloadSponsorTemplate}
+                    disabled={downloadingSponsorTemplate}
+                    style={{ borderRadius: '6px' }}
+                  >
+                    <i className={`fas fa-download mr-1 ${downloadingSponsorTemplate ? 'fa-spin' : ''}`}></i>
+                    {downloadingSponsorTemplate ? 'Downloading...' : 'Download Template'}
+                  </button>
                 </div>
-                <h5 className="font-weight-bold text-dark mb-2">Synchronize HMO Sponsors?</h5>
-                <p className="text-muted small mb-0 px-2" style={{ lineHeight: '1.5' }}>
-                  This will import and update all 64 HMO sponsors and their official billing codes from <strong>Sponsor.xlsx</strong> into the database.
-                </p>
+
+                {/* Default Category selector */}
+                <div className="form-group mb-3">
+                  <label className="font-weight-bold text-dark small mb-1">
+                    Default Category (for rows without Category column)
+                  </label>
+                  <select
+                    className="custom-select custom-select-sm"
+                    value={sponsorUploadCategory}
+                    onChange={(e) => setSponsorUploadCategory(e.target.value)}
+                  >
+                    <option value="">HMO (Default)</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.category}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="form-text text-muted">
+                    If your file has a <code>Category</code> column, the category from the file will be used automatically.
+                  </small>
+                </div>
+
+                {/* File Dropzone */}
+                <div className="form-group mb-3">
+                  <label className="font-weight-bold text-dark small mb-1">
+                    Select File to Upload (.xlsx, .xls, .csv)
+                  </label>
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setSponsorDragOver(true);
+                    }}
+                    onDragLeave={() => setSponsorDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setSponsorDragOver(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        setSponsorUploadFile(e.dataTransfer.files[0]);
+                      }
+                    }}
+                    style={{
+                      border: sponsorDragOver ? '2px dashed #2563eb' : '2px dashed #cbd5e1',
+                      borderRadius: '10px',
+                      backgroundColor: sponsorDragOver ? '#eff6ff' : '#f8fafc',
+                      padding: '24px 16px',
+                      textAlign: 'center',
+                      transition: 'all 0.2s ease',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => document.getElementById('sponsor-bulk-file-input')?.click()}
+                  >
+                    <input
+                      id="sponsor-bulk-file-input"
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setSponsorUploadFile(e.target.files[0]);
+                        }
+                      }}
+                    />
+                    {sponsorUploadFile ? (
+                      <div>
+                        <i className="fas fa-file-excel fa-3x text-success mb-2"></i>
+                        <h6 className="font-weight-bold text-dark mb-1">{sponsorUploadFile.name}</h6>
+                        <span className="badge badge-primary px-2 py-1">
+                          {(sponsorUploadFile.size / 1024).toFixed(1)} KB
+                        </span>
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-outline-danger font-weight-bold"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setSponsorUploadFile(null);
+                            }}
+                          >
+                            <i className="fas fa-times mr-1"></i> Remove File
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <i className="fas fa-cloud-upload-alt fa-3x text-muted mb-2"></i>
+                        <div className="font-weight-bold text-dark mb-1">
+                          Click to browse or drag and drop your spreadsheet here
+                        </div>
+                        <p className="text-muted small mb-0">
+                          Supports Microsoft Excel (<code>.xlsx</code>) and <code>.csv</code> files
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Default Server Sync Note if no file selected */}
+                {!sponsorUploadFile && (
+                  <div className="alert alert-light border small text-muted mb-0 d-flex align-items-center">
+                    <i className="fas fa-info-circle text-info mr-2 fa-lg"></i>
+                    <span>
+                      If no file is selected, clicking <strong>"Upload Sponsors"</strong> will automatically synchronize all 64 HMO sponsors from the default <strong>Sponsor.xlsx</strong> file on the server.
+                    </span>
+                  </div>
+                )}
               </div>
 
-              <div className="modal-footer bg-light py-2 px-4 d-flex justify-content-end border-top">
+              <div className="modal-footer bg-light py-2 px-4 d-flex justify-content-between border-top">
                 <button
                   type="button"
-                  className="btn btn-secondary font-weight-bold px-3 mr-2"
-                  onClick={() => setSyncExcelModalOpen(false)}
+                  className="btn btn-outline-secondary font-weight-bold px-3"
+                  onClick={() => {
+                    setSyncExcelModalOpen(false);
+                    setSponsorUploadFile(null);
+                  }}
                   disabled={importingSponsors}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="btn btn-success font-weight-bold px-4 shadow-sm"
+                  className="btn btn-primary font-weight-bold px-4 shadow-sm"
                   onClick={executeImportFromExcel}
                   disabled={importingSponsors}
+                  style={{
+                    background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+                    borderColor: '#1d4ed8',
+                  }}
                 >
                   {importingSponsors ? (
                     <>
-                      <i className="fas fa-spinner fa-spin mr-1"></i> Syncing...
+                      <i className="fas fa-spinner fa-spin mr-1"></i> Processing...
                     </>
                   ) : (
                     <>
-                      <i className="fas fa-check mr-1"></i> Proceed &amp; Sync
+                      <i className="fas fa-check-circle mr-1"></i>{' '}
+                      {sponsorUploadFile ? 'Upload Sponsors' : 'Sync Sponsor.xlsx'}
                     </>
                   )}
                 </button>

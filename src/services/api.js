@@ -273,6 +273,13 @@ export const api = {
     return res.data;
   },
 
+  async downloadSponsorsTemplate() {
+    const res = await client.get('/sponsors/download-template/', {
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+
   // Plans under Sponsors (e.g. Bronze, Silver, Gold, Platinum under a Sponsor)
   async getPlans(params = null) {
     let queryParams = {};
