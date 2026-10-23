@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 
-export default function BillingsView({ onOpenNewPatient, currentUser }) {
+export default function BillingsView({ onOpenNewPatient, currentUser, initialSubMenu = 'encounters' }) {
+  // Normalize route subTab aliases (e.g. 'unprocessed' -> 'encounters', 'invoices' -> 'payments')
+  const normalizeSubMenu = (menu) => {
+    if (!menu) return 'encounters';
+    if (menu === 'unprocessed' || menu === 'encounters') return 'encounters';
+    if (menu === 'invoices' || menu === 'payments') return 'payments';
+    return menu;
+  };
+
   // Dynamic logged-in user extraction
   const getLoggedInUser = () => {
     if (currentUser) return currentUser;
@@ -31,7 +39,14 @@ export default function BillingsView({ onOpenNewPatient, currentUser }) {
 
   // Navigation Sidebar sub-menu matching Screenshot 1
   // 'encounters' | 'incomplete' | 'complete' | 'services' | 'outstanding' | 'payments'
-  const [activeSubMenu, setActiveSubMenu] = useState('encounters');
+  const [activeSubMenu, setActiveSubMenu] = useState(() => normalizeSubMenu(initialSubMenu));
+
+  // Sync with initialSubMenu when deep linked or navigated from outside
+  useEffect(() => {
+    if (initialSubMenu) {
+      setActiveSubMenu(normalizeSubMenu(initialSubMenu));
+    }
+  }, [initialSubMenu]);
 
   // Encounter Billing Queue Data & Multi-field Filtering
   const [encounterQueue, setEncounterQueue] = useState([]);

@@ -628,23 +628,26 @@ export default function DoctorConsultationModal({
     ))
   );
 
+  const hasPlanOrSponsor = Boolean(currentSponsorName || currentSponsorId || currentPlanId);
+
   const isPrivatePatient = Boolean(
     isExplicitlyPrivate ||
     (!currentSponsorName && !currentSponsorId && !currentPlanId)
   );
 
-  const isHmoPatient = !isPrivatePatient && Boolean(currentSponsorName || currentSponsorId || currentPlanId);
+  const isHmoPatient = !isExplicitlyPrivate && hasPlanOrSponsor;
+  const isPrivateSponsor = isExplicitlyPrivate && hasPlanOrSponsor;
 
-  // Auto-align default tariff modes whenever HMO patient is detected:
-  // HMO/Sponsor patients must ALWAYS default to 'covered' (HMO Formulary).
-  // The doctor only switches to General Tariff ('Pay from purse') if a specific item is not covered.
+  // Auto-align default tariff modes whenever patient with sponsor/plan is detected:
+  // Both HMO and Private Sponsor patients default to 'covered' (Plan Tariff).
+  // The doctor can toggle to General Tariff ('Pay from purse') if a specific item is not covered.
   useEffect(() => {
-    if (isHmoPatient) {
+    if (hasPlanOrSponsor) {
       setTariffMode('covered');
       setLabTariffMode('covered');
       setRadiologyTariffMode('covered');
     }
-  }, [isHmoPatient]);
+  }, [hasPlanOrSponsor]);
 
   // Load covered medications attached to this patient's Sponsor and Plan AND general out-of-pocket prices
   const loadPatientMedicationTariffs = async (pId, sId, plId, searchQuery = '') => {
@@ -668,11 +671,11 @@ export default function DoctorConsultationModal({
       setGeneralMedications(generalList);
 
       // Default tariffMode logic:
-      // HMO/Sponsor patients ALWAYS default to 'covered' (HMO Formulary).
-      // Only strictly private/self-pay patients (no sponsor or plan) default to 'general'.
+      // HMO/Sponsor patients ALWAYS default to 'covered' (Formulary / Plan Tariff).
+      // Only strictly walk-in self-pay patients (no sponsor or plan) default to 'general'.
       if (!searchQuery) {
-        const hasCoverage = coveredList.length > 0 || Boolean(sId || plId || currentSponsorId || currentPlanId || currentSponsorName);
-        if (hasCoverage && !isExplicitlyPrivate) {
+        const hasCoverage = coveredList.length > 0 || hasPlanOrSponsor;
+        if (hasCoverage) {
           setTariffMode('covered');
         } else {
           setTariffMode('general');
@@ -707,8 +710,8 @@ export default function DoctorConsultationModal({
       setGeneralLabTariffs(generalList);
 
       if (!searchQuery) {
-        const hasCoverage = coveredList.length > 0 || Boolean(sId || plId || currentSponsorId || currentPlanId || currentSponsorName);
-        if (hasCoverage && !isExplicitlyPrivate) {
+        const hasCoverage = coveredList.length > 0 || hasPlanOrSponsor;
+        if (hasCoverage) {
           setLabTariffMode('covered');
         } else {
           setLabTariffMode('general');
@@ -743,8 +746,8 @@ export default function DoctorConsultationModal({
       setGeneralRadiologyTariffs(generalList);
 
       if (!searchQuery) {
-        const hasCoverage = coveredList.length > 0 || Boolean(sId || plId || currentSponsorId || currentPlanId || currentSponsorName);
-        if (hasCoverage && !isExplicitlyPrivate) {
+        const hasCoverage = coveredList.length > 0 || hasPlanOrSponsor;
+        if (hasCoverage) {
           setRadiologyTariffMode('covered');
         } else {
           setRadiologyTariffMode('general');
@@ -806,13 +809,9 @@ export default function DoctorConsultationModal({
         appointment?.sponsor_name ||
         '';
 
-      const isPatientHmo = Boolean(
-        (sponsorId || planId || sponsorName) &&
-        !sponsorName.toLowerCase().includes('private') &&
-        !sponsorName.toLowerCase().includes('self')
-      );
+      const hasSponsorCoverage = Boolean(sponsorId || planId || sponsorName);
 
-      if (isPatientHmo) {
+      if (hasSponsorCoverage) {
         setTariffMode('covered');
         setLabTariffMode('covered');
         setRadiologyTariffMode('covered');
@@ -3957,99 +3956,113 @@ export default function DoctorConsultationModal({
                   </div>
                   <div className="card-body p-3">
                     {/* Patient Sponsor & Plan Coverage Banner */}
-                    {isPrivatePatient ? (
-                      <div
-                        className="alert alert-secondary py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
-                        style={{
-                          borderRadius: '8px',
-                          borderLeft: '4px solid #10b981',
-                          backgroundColor: '#ecfdf5',
-                          borderColor: '#a7f3d0',
-                        }}
-                      >
-                        <div className="d-flex align-items-center">
-                          <div className="mr-3 text-success" style={{ fontSize: '1.4rem' }}>
-                            <i className="fas fa-user-check"></i>
-                          </div>
-                          <div>
-                            <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
-                              <span>Private Patient &bull; General Pricing:</span>
-                              <span className="text-success font-weight-bold">{currentSponsorName || 'Private / Cash'}</span>
-                              {currentPlanName && (
-                                <span className="badge badge-success px-2 py-0.5 font-weight-bold">
-                                  {currentPlanName}
-                                </span>
-                              )}
-                              <span className="badge badge-light border text-success font-weight-bold ml-1">
-                                <i className="fas fa-coins mr-1"></i> Self-Pay (Cash / Purse)
-                              </span>
+                    {hasPlanOrSponsor ? (
+                      isPrivateSponsor ? (
+                        <div
+                          className="alert alert-secondary py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
+                          style={{
+                            borderRadius: '8px',
+                            borderLeft: '4px solid #10b981',
+                            backgroundColor: '#ecfdf5',
+                            borderColor: '#a7f3d0',
+                          }}
+                        >
+                          <div className="d-flex align-items-center">
+                            <div className="mr-3 text-success" style={{ fontSize: '1.4rem' }}>
+                              <i className="fas fa-user-check"></i>
                             </div>
-                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                              Private sponsor patients maintain the standard General Price. No HMO approval required; billed directly to patient.
-                            </div>
-                          </div>
-                        </div>
-                        <span className="badge badge-success px-2.5 py-1.5 font-weight-bold">
-                          <i className="fas fa-tag mr-1"></i> General Price Active ({generalMedications.length})
-                        </span>
-                      </div>
-                    ) : (currentSponsorName || currentPlanName) ? (
-                      <div
-                        className="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
-                        style={{
-                          borderRadius: '8px',
-                          borderLeft: '4px solid #0284c7',
-                          backgroundColor: '#f0f9ff',
-                          borderColor: '#bae6fd',
-                        }}
-                      >
-                        <div className="d-flex align-items-center">
-                          <div className="mr-3 text-primary" style={{ fontSize: '1.4rem' }}>
-                            <i className="fas fa-shield-alt"></i>
-                          </div>
-                          <div>
-                            <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
-                              <span>HMO Sponsor Coverage (Claims):</span>
-                              <span className="text-primary font-weight-bold">{currentSponsorName || 'HMO Sponsor'}</span>
-                              {currentPlanName && (
-                                <span className="badge badge-primary px-2 py-1 font-weight-bold">
-                                  {currentPlanName}
+                            <div>
+                              <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
+                                <span>Private Sponsor Plan Tariffs:</span>
+                                <span className="text-success font-weight-bold">{currentSponsorName || 'Private Sponsor'}</span>
+                                {currentPlanName && (
+                                  <span className="badge badge-success px-2 py-0.5 font-weight-bold">
+                                    {currentPlanName}
+                                  </span>
+                                )}
+                                <span className="badge badge-light border text-success font-weight-bold ml-1">
+                                  <i className="fas fa-coins mr-1"></i> Self-Pay (Cash / Purse)
                                 </span>
-                              )}
-                              <span className="badge badge-light border text-primary font-weight-bold ml-1">
-                                <i className="fas fa-file-medical mr-1"></i> Requires HMO Claim / Approval
-                              </span>
-                            </div>
-                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                              {loadingCoveredMeds ? (
-                                <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading HMO formulary medications...</span>
-                              ) : coveredMedications.length > 0 ? (
-                                <span>
-                                  <i className="fas fa-check-circle text-success mr-1"></i>
-                                  <strong>{coveredMedications.length}</strong> covered medication{coveredMedications.length > 1 ? 's' : ''} under HMO plan. If a drug is not covered, switch to <strong>General Tariff</strong> and patient will <strong>pay from purse</strong>.
-                                </span>
-                              ) : (
-                                <span className="text-warning font-weight-bold">
-                                  <i className="fas fa-info-circle mr-1"></i>
-                                  No medication price tariffs added for {currentPlanName || currentSponsorName} yet. Switch to General Tariff to prescribe.
-                                </span>
-                              )}
+                              </div>
+                              <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                {loadingCoveredMeds ? (
+                                  <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading plan formulary medications...</span>
+                                ) : coveredMedications.length > 0 ? (
+                                  <span>
+                                    <i className="fas fa-check-circle text-success mr-1"></i>
+                                    <strong>{coveredMedications.length}</strong> medication{coveredMedications.length > 1 ? 's' : ''} loaded under <strong>{currentPlanName || 'Private Plan'}</strong>. If a drug is not covered, toggle to <strong>General Tariff</strong> and patient will <strong>pay from purse</strong>.
+                                  </span>
+                                ) : (
+                                  <span className="text-warning font-weight-bold">
+                                    <i className="fas fa-info-circle mr-1"></i>
+                                    No medication price tariffs added for {currentPlanName || currentSponsorName} yet. Toggle to General Tariff to prescribe.
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        {coveredMedications.length > 0 && (
-                          <span className="badge badge-light border text-primary font-weight-bold px-2 py-1 small">
-                            <i className="fas fa-pills mr-1"></i> {coveredMedications.length} Plan Tariffs
+                          <span className={`badge ${tariffMode === 'covered' ? 'badge-success' : 'badge-warning text-dark'} px-2.5 py-1.5 font-weight-bold`}>
+                            <i className={`fas ${tariffMode === 'covered' ? 'fa-file-invoice-dollar' : 'fa-wallet'} mr-1`}></i>
+                            {tariffMode === 'covered' ? `Plan Tariff Active (${coveredMedications.length})` : `General Price Active (${generalMedications.length})`}
                           </span>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
+                          style={{
+                            borderRadius: '8px',
+                            borderLeft: '4px solid #0284c7',
+                            backgroundColor: '#f0f9ff',
+                            borderColor: '#bae6fd',
+                          }}
+                        >
+                          <div className="d-flex align-items-center">
+                            <div className="mr-3 text-primary" style={{ fontSize: '1.4rem' }}>
+                              <i className="fas fa-shield-alt"></i>
+                            </div>
+                            <div>
+                              <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
+                                <span>HMO Sponsor Coverage (Claims):</span>
+                                <span className="text-primary font-weight-bold">{currentSponsorName || 'HMO Sponsor'}</span>
+                                {currentPlanName && (
+                                  <span className="badge badge-primary px-2 py-1 font-weight-bold">
+                                    {currentPlanName}
+                                  </span>
+                                )}
+                                <span className="badge badge-light border text-primary font-weight-bold ml-1">
+                                  <i className="fas fa-file-medical mr-1"></i> Requires HMO Claim / Approval
+                                </span>
+                              </div>
+                              <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                {loadingCoveredMeds ? (
+                                  <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading HMO formulary medications...</span>
+                                ) : coveredMedications.length > 0 ? (
+                                  <span>
+                                    <i className="fas fa-check-circle text-success mr-1"></i>
+                                    <strong>{coveredMedications.length}</strong> covered medication{coveredMedications.length > 1 ? 's' : ''} under HMO plan. If a drug is not covered, switch to <strong>General Tariff</strong> and patient will <strong>pay from purse</strong>.
+                                  </span>
+                                ) : (
+                                  <span className="text-warning font-weight-bold">
+                                    <i className="fas fa-info-circle mr-1"></i>
+                                    No medication price tariffs added for {currentPlanName || currentSponsorName} yet. Switch to General Tariff to prescribe.
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <span className={`badge ${tariffMode === 'covered' ? 'badge-primary' : 'badge-warning text-dark'} px-2.5 py-1.5 font-weight-bold`}>
+                            <i className={`fas ${tariffMode === 'covered' ? 'fa-shield-alt' : 'fa-wallet'} mr-1`}></i>
+                            {tariffMode === 'covered' ? `HMO Formulary Active (${coveredMedications.length})` : `General Price Active (${generalMedications.length})`}
+                          </span>
+                        </div>
+                      )
                     ) : (
                       <div className="alert alert-light border py-2 px-3 mb-3 d-flex align-items-center justify-content-between small text-muted">
                         <div>
                           <i className="fas fa-user mr-1 text-secondary"></i>
                           <strong>Private / Cash Patient:</strong> General prices apply. Billed as self-pay cash.
                         </div>
-                        <span className="badge badge-secondary">General Price</span>
+                        <span className="badge badge-secondary">General Price Active ({generalMedications.length})</span>
                       </div>
                     )}
 
@@ -4061,21 +4074,24 @@ export default function DoctorConsultationModal({
                           <span style={{ fontSize: '0.92rem' }}>Medication Prescription & Dispensing Form</span>
                         </span>
                         <div className="d-flex align-items-center" style={{ gap: '8px' }}>
-                          {isHmoPatient ? (
+                          {hasPlanOrSponsor ? (
                             <div className="btn-group btn-group-sm p-0.5 bg-light rounded border" role="group">
                               <button
                                 type="button"
                                 className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
-                                  tariffMode === 'covered' ? 'btn-primary shadow-xs' : 'btn-light text-secondary'
+                                  tariffMode === 'covered'
+                                    ? (isHmoPatient ? 'btn-primary shadow-xs' : 'btn-success text-white shadow-xs')
+                                    : 'btn-light text-secondary'
                                 }`}
                                 style={{ borderRadius: '5px', fontSize: '0.78rem' }}
                                 onClick={() => {
                                   setTariffMode('covered');
                                   setSelectedMedTariff(null);
                                 }}
-                                title="Search drugs covered by patient HMO plan (Requires HMO Claim/Approval)"
+                                title={`Search drugs covered by patient ${isHmoPatient ? 'HMO plan' : 'private sponsor plan'}`}
                               >
-                                <i className="fas fa-shield-alt mr-1"></i> HMO Formulary ({coveredMedications.length})
+                                <i className={`fas ${isHmoPatient ? 'fa-shield-alt' : 'fa-file-invoice-dollar'} mr-1`}></i>
+                                {isHmoPatient ? 'HMO Formulary' : (currentPlanName || 'Plan Tariff')} ({coveredMedications.length})
                               </button>
                               <button
                                 type="button"
@@ -4087,14 +4103,14 @@ export default function DoctorConsultationModal({
                                   setTariffMode('general');
                                   setSelectedMedTariff(null);
                                 }}
-                                title="HMO doesn't cover drug? Switch to General Tariff: drug will carry label 'Pay from your purse'"
+                                title="Drug not covered by plan? Switch to General Tariff to pick (Pay from purse)"
                               >
                                 <i className="fas fa-wallet mr-1"></i> Not Covered? Switch to General Tariff &bull; Pay from your purse ({generalMedications.length})
                               </button>
                             </div>
                           ) : (
-                            <span className="badge badge-success px-2.5 py-1.5 font-weight-bold shadow-xs">
-                              <i className="fas fa-wallet mr-1"></i> Private Patient &bull; General Price ({generalMedications.length || coveredMedications.length})
+                            <span className="badge badge-secondary px-2.5 py-1.5 font-weight-bold shadow-xs">
+                              <i className="fas fa-wallet mr-1"></i> General Price ({generalMedications.length})
                             </span>
                           )}
                         </div>
@@ -4119,7 +4135,7 @@ export default function DoctorConsultationModal({
                             <input
                               type="text"
                               className="form-control form-control-sm font-weight-bold text-dark"
-                              placeholder={tariffMode === 'general' ? "Search general price drugs..." : "Type or select drug..."}
+                              placeholder={tariffMode === 'general' ? "Search general price drugs..." : `Search ${isHmoPatient ? 'HMO formulary' : (currentPlanName || 'plan tariff')} drugs...`}
                               value={drugName}
                               onFocus={() => setShowDrugDropdown(true)}
                               onChange={(e) => handleDrugInputChange(e.target.value)}
@@ -4176,7 +4192,7 @@ export default function DoctorConsultationModal({
                                       <i className="fas fa-wallet mr-1"></i> General Tariff (Pay from your purse)
                                     </span>
                                   ) : (
-                                    <span>Formulary: {currentPlanName || 'Medication Tariffs'}</span>
+                                    <span>Formulary: {currentPlanName || currentSponsorName || 'Medication Tariffs'}</span>
                                   )}
                                 </span>
                                 <span className="badge badge-secondary small">
@@ -4228,13 +4244,13 @@ export default function DoctorConsultationModal({
                                     </button>
                                   ))}
 
-                                  {/* Quick Switch Button at bottom of dropdown for HMO patients */}
-                                  {isHmoPatient && (
+                                  {/* Quick Switch Button at bottom of dropdown for Sponsor patients */}
+                                  {hasPlanOrSponsor && (
                                     <div className="p-2 bg-light border-top text-center">
                                       <button
                                         type="button"
                                         className="btn btn-link btn-sm p-0 font-weight-bold"
-                                        style={{ fontSize: '0.78rem', color: tariffMode === 'covered' ? '#b45309' : '#2563eb' }}
+                                        style={{ fontSize: '0.78rem', color: tariffMode === 'covered' ? '#b45309' : (isHmoPatient ? '#2563eb' : '#059669') }}
                                         onClick={() => {
                                           setTariffMode(tariffMode === 'covered' ? 'general' : 'covered');
                                           setShowDrugDropdown(true);
@@ -4246,7 +4262,7 @@ export default function DoctorConsultationModal({
                                           </>
                                         ) : (
                                           <>
-                                            <i className="fas fa-exchange-alt mr-1"></i> Switch back to <strong>HMO Formulary ({currentPlanName || currentSponsorName})</strong>
+                                            <i className="fas fa-exchange-alt mr-1"></i> Switch back to <strong>{isHmoPatient ? 'HMO Formulary' : 'Plan Tariff'} ({currentPlanName || currentSponsorName})</strong>
                                           </>
                                         )}
                                       </button>
@@ -4256,15 +4272,15 @@ export default function DoctorConsultationModal({
                               ) : (
                                 <div className="p-3 text-center">
                                   <div className="text-muted small mb-2">
-                                    {isHmoPatient && tariffMode === 'covered' ? (
+                                    {hasPlanOrSponsor && tariffMode === 'covered' ? (
                                       <>
-                                        "<strong>{drugName}</strong>" is not covered in <strong>{currentPlanName || 'patient HMO plan'}</strong>.
+                                        "<strong>{drugName}</strong>" is not covered in <strong>{currentPlanName || currentSponsorName || 'patient plan'}</strong>.
                                       </>
                                     ) : (
                                       <>No medication found matching "<strong>{drugName}</strong>".</>
                                     )}
                                   </div>
-                                  {isHmoPatient && tariffMode === 'covered' && (
+                                  {hasPlanOrSponsor && tariffMode === 'covered' && (
                                     <div className="mb-2">
                                       <button
                                         type="button"
@@ -4274,7 +4290,7 @@ export default function DoctorConsultationModal({
                                           setShowDrugDropdown(true);
                                         }}
                                       >
-                                        <i className="fas fa-wallet mr-1"></i> Switch to General Tariff (Pay from your purse)
+                                        <i className="fas fa-wallet mr-1"></i> Not Covered? Switch to General Tariff (Pay from your purse)
                                       </button>
                                     </div>
                                   )}
@@ -4874,99 +4890,113 @@ export default function DoctorConsultationModal({
 
                   <div className="card-body p-3.5">
                     {/* Patient Sponsor & Plan Coverage Lab Tariffs Banner */}
-                    {isPrivatePatient ? (
-                      <div
-                        className="alert alert-success py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
-                        style={{
-                          borderRadius: '8px',
-                          borderLeft: '4px solid #10b981',
-                          backgroundColor: '#ecfdf5',
-                          borderColor: '#a7f3d0',
-                        }}
-                      >
-                        <div className="d-flex align-items-center">
-                          <div className="mr-3 text-success" style={{ fontSize: '1.4rem' }}>
-                            <i className="fas fa-flask"></i>
-                          </div>
-                          <div>
-                            <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
-                              <span>Private Patient &bull; General Pricing:</span>
-                              <span className="text-success font-weight-bold">{currentSponsorName || 'Private / Cash'}</span>
-                              {currentPlanName && (
-                                <span className="badge badge-success px-2 py-0.5 font-weight-bold">
-                                  {currentPlanName}
-                                </span>
-                              )}
-                              <span className="badge badge-light border text-success font-weight-bold ml-1">
-                                <i className="fas fa-coins mr-1"></i> Self-Pay (Cash / Purse)
-                              </span>
+                    {hasPlanOrSponsor ? (
+                      isPrivateSponsor ? (
+                        <div
+                          className="alert alert-secondary py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
+                          style={{
+                            borderRadius: '8px',
+                            borderLeft: '4px solid #10b981',
+                            backgroundColor: '#ecfdf5',
+                            borderColor: '#a7f3d0',
+                          }}
+                        >
+                          <div className="d-flex align-items-center">
+                            <div className="mr-3 text-success" style={{ fontSize: '1.4rem' }}>
+                              <i className="fas fa-flask"></i>
                             </div>
-                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                              Private sponsor patients maintain the standard General Price. No HMO approval required; billed directly to patient.
-                            </div>
-                          </div>
-                        </div>
-                        <span className="badge badge-success px-2.5 py-1.5 font-weight-bold">
-                          <i className="fas fa-tag mr-1"></i> General Price Active ({generalLabTariffs.length})
-                        </span>
-                      </div>
-                    ) : (currentSponsorName || currentPlanName) ? (
-                      <div
-                        className="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
-                        style={{
-                          borderRadius: '8px',
-                          borderLeft: '4px solid #0284c7',
-                          backgroundColor: '#f0f9ff',
-                          borderColor: '#bae6fd',
-                        }}
-                      >
-                        <div className="d-flex align-items-center">
-                          <div className="mr-3 text-info" style={{ fontSize: '1.4rem' }}>
-                            <i className="fas fa-shield-alt"></i>
-                          </div>
-                          <div>
-                            <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
-                              <span>HMO Sponsor Coverage (Claims):</span>
-                              <span className="text-info font-weight-bold">{currentSponsorName || 'HMO Sponsor'}</span>
-                              {currentPlanName && (
-                                <span className="badge badge-info px-2 py-1 font-weight-bold">
-                                  {currentPlanName}
+                            <div>
+                              <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
+                                <span>Private Sponsor Plan Lab Tariffs:</span>
+                                <span className="text-success font-weight-bold">{currentSponsorName || 'Private Sponsor'}</span>
+                                {currentPlanName && (
+                                  <span className="badge badge-success px-2 py-0.5 font-weight-bold">
+                                    {currentPlanName}
+                                  </span>
+                                )}
+                                <span className="badge badge-light border text-success font-weight-bold ml-1">
+                                  <i className="fas fa-coins mr-1"></i> Self-Pay (Cash / Purse)
                                 </span>
-                              )}
-                              <span className="badge badge-light border text-info font-weight-bold ml-1">
-                                <i className="fas fa-file-medical mr-1"></i> Requires HMO Claim / Approval
-                              </span>
-                            </div>
-                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                              {loadingCoveredLabs ? (
-                                <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading HMO covered lab investigations...</span>
-                              ) : coveredLabTariffs.length > 0 ? (
-                                <span>
-                                  <i className="fas fa-check-circle text-success mr-1"></i>
-                                  <strong>{coveredLabTariffs.length}</strong> covered test{coveredLabTariffs.length > 1 ? 's' : ''} under HMO plan. If a test is not covered, switch to <strong>General Tariff</strong> and patient will <strong>pay from purse</strong>.
-                                </span>
-                              ) : (
-                                <span className="text-warning font-weight-bold">
-                                  <i className="fas fa-info-circle mr-1"></i>
-                                  No lab price tariffs added for {currentPlanName || currentSponsorName} yet. Switch to General Tariff to requisition.
-                                </span>
-                              )}
+                              </div>
+                              <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                {loadingCoveredLabs ? (
+                                  <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading plan lab investigations...</span>
+                                ) : coveredLabTariffs.length > 0 ? (
+                                  <span>
+                                    <i className="fas fa-check-circle text-success mr-1"></i>
+                                    <strong>{coveredLabTariffs.length}</strong> covered test{coveredLabTariffs.length > 1 ? 's' : ''} loaded under <strong>{currentPlanName || 'Private Plan'}</strong>. If a test is not covered, toggle to <strong>General Tariff</strong> and patient will <strong>pay from purse</strong>.
+                                  </span>
+                                ) : (
+                                  <span className="text-warning font-weight-bold">
+                                    <i className="fas fa-info-circle mr-1"></i>
+                                    No lab price tariffs added for {currentPlanName || currentSponsorName} yet. Toggle to General Tariff to requisition.
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        {coveredLabTariffs.length > 0 && (
-                          <span className="badge badge-light border text-info font-weight-bold px-2 py-1 small">
-                            <i className="fas fa-vial mr-1"></i> {coveredLabTariffs.length} Plan Tariffs
+                          <span className={`badge ${labTariffMode === 'covered' ? 'badge-success' : 'badge-warning text-dark'} px-2.5 py-1.5 font-weight-bold`}>
+                            <i className={`fas ${labTariffMode === 'covered' ? 'fa-flask' : 'fa-wallet'} mr-1`}></i>
+                            {labTariffMode === 'covered' ? `Plan Tariff Active (${coveredLabTariffs.length})` : `General Price Active (${generalLabTariffs.length})`}
                           </span>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap"
+                          style={{
+                            borderRadius: '8px',
+                            borderLeft: '4px solid #0284c7',
+                            backgroundColor: '#f0f9ff',
+                            borderColor: '#bae6fd',
+                          }}
+                        >
+                          <div className="d-flex align-items-center">
+                            <div className="mr-3 text-info" style={{ fontSize: '1.4rem' }}>
+                              <i className="fas fa-shield-alt"></i>
+                            </div>
+                            <div>
+                              <div className="font-weight-bold text-dark small d-flex flex-wrap align-items-center" style={{ gap: '6px' }}>
+                                <span>HMO Sponsor Coverage (Claims):</span>
+                                <span className="text-info font-weight-bold">{currentSponsorName || 'HMO Sponsor'}</span>
+                                {currentPlanName && (
+                                  <span className="badge badge-info px-2 py-1 font-weight-bold">
+                                    {currentPlanName}
+                                  </span>
+                                )}
+                                <span className="badge badge-light border text-info font-weight-bold ml-1">
+                                  <i className="fas fa-file-medical mr-1"></i> Requires HMO Claim / Approval
+                                </span>
+                              </div>
+                              <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                {loadingCoveredLabs ? (
+                                  <span><i className="fas fa-spinner fa-spin mr-1"></i> Loading HMO covered lab investigations...</span>
+                                ) : coveredLabTariffs.length > 0 ? (
+                                  <span>
+                                    <i className="fas fa-check-circle text-success mr-1"></i>
+                                    <strong>{coveredLabTariffs.length}</strong> covered test{coveredLabTariffs.length > 1 ? 's' : ''} under HMO plan. If a test is not covered, switch to <strong>General Tariff</strong> and patient will <strong>pay from purse</strong>.
+                                  </span>
+                                ) : (
+                                  <span className="text-warning font-weight-bold">
+                                    <i className="fas fa-info-circle mr-1"></i>
+                                    No lab price tariffs added for {currentPlanName || currentSponsorName} yet. Switch to General Tariff to requisition.
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <span className={`badge ${labTariffMode === 'covered' ? 'badge-primary' : 'badge-warning text-dark'} px-2.5 py-1.5 font-weight-bold`}>
+                            <i className={`fas ${labTariffMode === 'covered' ? 'fa-shield-alt' : 'fa-wallet'} mr-1`}></i>
+                            {labTariffMode === 'covered' ? `HMO Covered Active (${coveredLabTariffs.length})` : `General Price Active (${generalLabTariffs.length})`}
+                          </span>
+                        </div>
+                      )
                     ) : (
                       <div className="alert alert-light border py-2 px-3 mb-3 d-flex align-items-center justify-content-between small text-muted">
                         <div>
                           <i className="fas fa-user mr-1 text-secondary"></i>
                           <strong>Private / Cash Patient:</strong> Standard general laboratory test tariffs apply.
                         </div>
-                        <span className="badge badge-secondary">Private / Cash</span>
+                        <span className="badge badge-secondary">General Price Active ({generalLabTariffs.length})</span>
                       </div>
                     )}
 
@@ -4978,21 +5008,24 @@ export default function DoctorConsultationModal({
                           <span>Requisition Laboratory Test:</span>
                         </div>
                         <div>
-                          {isHmoPatient ? (
+                          {hasPlanOrSponsor ? (
                             <div className="btn-group btn-group-sm p-0.5 bg-light border" style={{ borderRadius: '6px' }}>
                               <button
                                 type="button"
                                 className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
-                                  labTariffMode === 'covered' ? 'btn-info text-white shadow-xs' : 'btn-light text-secondary'
+                                  labTariffMode === 'covered'
+                                    ? (isHmoPatient ? 'btn-info text-white shadow-xs' : 'btn-success text-white shadow-xs')
+                                    : 'btn-light text-secondary'
                                 }`}
                                 style={{ borderRadius: '5px', fontSize: '0.78rem' }}
                                 onClick={() => {
                                   setLabTariffMode('covered');
                                   setSelectedLabTariff(null);
                                 }}
-                                title="Search lab tests covered by patient HMO plan (Requires HMO Claim/Approval)"
+                                title={`Search lab tests covered by patient ${isHmoPatient ? 'HMO plan' : 'private sponsor plan'}`}
                               >
-                                <i className="fas fa-shield-alt mr-1"></i> HMO Covered ({coveredLabTariffs.length})
+                                <i className={`fas ${isHmoPatient ? 'fa-shield-alt' : 'fa-flask'} mr-1`}></i>
+                                {isHmoPatient ? 'HMO Covered' : (currentPlanName || 'Plan Tariff')} ({coveredLabTariffs.length})
                               </button>
                               <button
                                 type="button"
@@ -5004,14 +5037,14 @@ export default function DoctorConsultationModal({
                                   setLabTariffMode('general');
                                   setSelectedLabTariff(null);
                                 }}
-                                title="HMO doesn't cover test? Switch to General Tariff: test will carry label 'Pay from your purse'"
+                                title="Test not covered by plan? Switch to General Tariff to pick (Pay from purse)"
                               >
                                 <i className="fas fa-wallet mr-1"></i> Not Covered? Switch to General Tariff &bull; Pay from your purse ({generalLabTariffs.length})
                               </button>
                             </div>
                           ) : (
-                            <span className="badge badge-success px-2.5 py-1.5 font-weight-bold shadow-xs">
-                              <i className="fas fa-wallet mr-1"></i> Private Patient &bull; General Price ({generalLabTariffs.length || coveredLabTariffs.length})
+                            <span className="badge badge-secondary px-2.5 py-1.5 font-weight-bold shadow-xs">
+                              <i className="fas fa-wallet mr-1"></i> General Price ({generalLabTariffs.length})
                             </span>
                           )}
                         </div>
@@ -5108,80 +5141,101 @@ export default function DoctorConsultationModal({
                                 <i className="fas fa-spinner fa-spin mr-1"></i> Loading laboratory tests...
                               </div>
                             ) : filteredCoveredLabs.length > 0 ? (
-                              filteredCoveredLabs.map((lab, idx) => (
-                                <button
-                                  key={lab.id || idx}
-                                  type="button"
-                                  className={`dropdown-item py-2 px-3 border-bottom text-wrap d-flex justify-content-between align-items-center ${
-                                    selectedLabIndex === idx ? 'bg-info text-white' : ''
-                                  }`}
-                                  style={{ cursor: 'pointer' }}
-                                  onClick={() => handleSelectCoveredLab(lab)}
-                                >
-                                  <div>
-                                    <div className="d-flex align-items-center">
-                                      <i className="fas fa-vial text-info mr-2"></i>
-                                      <span className={`font-weight-bold ${selectedLabIndex === idx ? 'text-white' : 'text-dark'}`}>
-                                        {lab.item}
-                                      </span>
-                                      {(labTariffMode === 'general' || lab.is_general || (!lab.sponsor_id && !lab.plan_id)) && (
-                                        <span className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs" style={{ fontSize: '0.70rem' }}>
-                                          <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                              <>
+                                {filteredCoveredLabs.map((lab, idx) => (
+                                  <button
+                                    key={lab.id || idx}
+                                    type="button"
+                                    className={`dropdown-item py-2 px-3 border-bottom text-wrap d-flex justify-content-between align-items-center ${
+                                      selectedLabIndex === idx ? 'bg-info text-white' : ''
+                                    }`}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => handleSelectCoveredLab(lab)}
+                                  >
+                                    <div>
+                                      <div className="d-flex align-items-center">
+                                        <i className="fas fa-vial text-info mr-2"></i>
+                                        <span className={`font-weight-bold ${selectedLabIndex === idx ? 'text-white' : 'text-dark'}`}>
+                                          {lab.item}
                                         </span>
-                                      )}
+                                        {(labTariffMode === 'general' || lab.is_general || (!lab.sponsor_id && !lab.plan_id)) && (
+                                          <span className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs" style={{ fontSize: '0.70rem' }}>
+                                            <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className={`small ${selectedLabIndex === idx ? 'text-white-50' : 'text-muted'}`}>
+                                        {lab.item_id && <span className="mr-2">Code: {lab.item_id}</span>}
+                                        {lab.plan_name && (
+                                          <span className={`badge ${selectedLabIndex === idx ? 'badge-light text-info' : 'badge-info'} mr-1`}>
+                                            {lab.plan_name}
+                                          </span>
+                                        )}
+                                        {lab.sponsor_name && (
+                                          <span className="small">{lab.sponsor_name}</span>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className={`small ${selectedLabIndex === idx ? 'text-white-50' : 'text-muted'}`}>
-                                      {lab.item_id && <span className="mr-2">Code: {lab.item_id}</span>}
-                                      {lab.plan_name && (
-                                        <span className={`badge ${selectedLabIndex === idx ? 'badge-light text-info' : 'badge-info'} mr-1`}>
-                                          {lab.plan_name}
-                                        </span>
-                                      )}
-                                      {lab.sponsor_name && (
-                                        <span className="small">{lab.sponsor_name}</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="text-right ml-2 flex-shrink-0">
-                                    <span className={`badge ${selectedLabIndex === idx ? 'badge-light text-success font-weight-bold' : 'badge-success'} px-2 py-1`}>
-                                      ₦{Number(lab.rate || 0).toLocaleString()}
-                                    </span>
-                                  </div>
-                                </button>
-                              ))
-                            ) : (
-                              <div className="p-3 text-center">
-                                <div className="text-muted small mb-2">
-                                  No {labTariffMode === 'general' ? 'general' : 'covered'} laboratory test found matching "<strong>{labTestName}</strong>"
-                                  {labTariffMode === 'covered' && currentPlanName ? ` for ${currentPlanName}` : ''}.
-                                </div>
-                                {labTariffMode === 'covered' && generalLabTariffs.length > 0 && (
-                                  <div className="mb-2">
+                                  </button>
+                                ))}
+                                {/* Quick Switch Button at bottom of dropdown for Sponsor patients */}
+                                {hasPlanOrSponsor && (
+                                  <div className="p-2 bg-light border-top text-center">
                                     <button
                                       type="button"
-                                      className="btn btn-sm btn-outline-warning"
+                                      className="btn btn-link btn-sm p-0 font-weight-bold"
+                                      style={{ fontSize: '0.78rem', color: labTariffMode === 'covered' ? '#b45309' : (isHmoPatient ? '#0284c7' : '#059669') }}
                                       onClick={() => {
-                                        setLabTariffMode('general');
+                                        setLabTariffMode(labTariffMode === 'covered' ? 'general' : 'covered');
+                                        setShowLabDropdown(true);
                                       }}
                                     >
-                                      <i className="fas fa-wallet mr-1"></i> Test not covered? Switch to <strong>General Tariff (Pay from your purse)</strong>
+                                      {labTariffMode === 'covered' ? (
+                                        <>
+                                          <i className="fas fa-exchange-alt mr-1"></i> Test not covered? Switch to <strong>General Tariff (Pay from your purse)</strong>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <i className="fas fa-exchange-alt mr-1"></i> Switch back to <strong>{isHmoPatient ? 'HMO Covered' : 'Plan Tariff'} ({currentPlanName || currentSponsorName})</strong>
+                                        </>
+                                      )}
                                     </button>
                                   </div>
                                 )}
-                                {labTestName.trim() && (
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm btn-outline-info"
-                                    onClick={() => setShowLabDropdown(false)}
-                                  >
-                                    <i className="fas fa-check mr-1"></i> Order "{labTestName.trim()}" (Non-Tariff / Custom)
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                              </>
+                            ) : (
+                                <div className="p-3 text-center">
+                                  <div className="text-muted small mb-2">
+                                    No {labTariffMode === 'general' ? 'general' : 'covered'} laboratory test found matching "<strong>{labTestName}</strong>"
+                                    {labTariffMode === 'covered' && currentPlanName ? ` for ${currentPlanName}` : ''}.
+                                  </div>
+                                  {labTariffMode === 'covered' && generalLabTariffs.length > 0 && (
+                                    <div className="mb-2">
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline-warning"
+                                        onClick={() => {
+                                          setLabTariffMode('general');
+                                        }}
+                                      >
+                                        <i className="fas fa-wallet mr-1"></i> Test not covered? Switch to <strong>General Tariff (Pay from your purse)</strong>
+                                      </button>
+                                    </div>
+                                  )}
+                                  {labTestName.trim() && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-info"
+                                      onClick={() => setShowLabDropdown(false)}
+                                    >
+                                      <i className="fas fa-check mr-1"></i> Order "{labTestName.trim()}" (Non-Tariff / Custom)
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
 
                       {/* Selected Lab Tariff Pill */}
                       {selectedLabTariff && (
@@ -5192,7 +5246,7 @@ export default function DoctorConsultationModal({
                             </span>
                           ) : (
                             <span className="badge badge-success px-2.5 py-1 font-weight-bold shadow-xs mr-2">
-                              <i className="fas fa-shield-alt mr-1"></i> HMO Covered &bull; ₦{Number(selectedLabTariff.rate || 0).toLocaleString()} ({selectedLabTariff.plan_name || 'Covered Plan'})
+                              <i className={`fas ${isHmoPatient ? 'fa-shield-alt' : 'fa-flask'} mr-1`}></i> {isHmoPatient ? 'HMO Covered' : (selectedLabTariff.plan_name || 'Plan Covered')} &bull; ₦{Number(selectedLabTariff.rate || 0).toLocaleString()}
                             </span>
                           )}
                           <span className="text-dark font-weight-bold">
@@ -5368,12 +5422,11 @@ export default function DoctorConsultationModal({
                             </div>
                           </div>
                         </div>
-                        {generalRadiologyTariffs.length > 0 && (
-                          <span className="badge badge-warning text-dark font-weight-bold px-2.5 py-1.5 shadow-xs" style={{ fontSize: '0.75rem' }}>
-                            <i className="fas fa-wallet mr-1"></i> {generalRadiologyTariffs.length} General Tariff Scans (Pay from your purse)
+                          <span className={`badge ${radiologyTariffMode === 'covered' ? 'badge-success' : 'badge-warning text-dark'} px-2.5 py-1.5 font-weight-bold`}>
+                            <i className={`fas ${radiologyTariffMode === 'covered' ? 'fa-x-ray' : 'fa-wallet'} mr-1`}></i>
+                            {radiologyTariffMode === 'covered' ? `Plan Tariff Active (${coveredRadiologyTariffs.length})` : `General Price Active (${generalRadiologyTariffs.length})`}
                           </span>
-                        )}
-                      </div>
+                        </div>
                     ) : (
                       <div className="alert alert-light border py-2 px-3 mb-3 d-flex align-items-center justify-content-between small text-muted">
                         <div>
@@ -5394,25 +5447,28 @@ export default function DoctorConsultationModal({
                           <span>Requisition Radiology Scan / Imaging:</span>
                         </div>
                         <div>
-                          {isHmoPatient ? (
+                          {hasPlanOrSponsor ? (
                             <div className="btn-group btn-group-sm p-0.5 bg-light border" style={{ borderRadius: '6px' }}>
                               <button
                                 type="button"
                                 className={`btn btn-xs py-1 px-2.5 font-weight-bold ${
-                                  radiologyTariffMode === 'covered' ? 'text-white shadow-xs' : 'btn-light text-secondary'
+                                  radiologyTariffMode === 'covered'
+                                    ? (isHmoPatient ? 'text-white shadow-xs' : 'btn-success text-white shadow-xs')
+                                    : 'btn-light text-secondary'
                                 }`}
                                 style={{
                                   borderRadius: '5px',
                                   fontSize: '0.78rem',
-                                  backgroundColor: radiologyTariffMode === 'covered' ? '#7c3aed' : undefined,
+                                  backgroundColor: radiologyTariffMode === 'covered' ? (isHmoPatient ? '#7c3aed' : undefined) : undefined,
                                 }}
                                 onClick={() => {
                                   setRadiologyTariffMode('covered');
                                   setSelectedRadiologyTariff(null);
                                 }}
-                                title="Search scans covered by patient HMO plan (Requires HMO Claim/Approval)"
+                                title={`Search scans covered by patient ${isHmoPatient ? 'HMO plan' : 'private sponsor plan'}`}
                               >
-                                <i className="fas fa-shield-alt mr-1"></i> HMO Covered ({coveredRadiologyTariffs.length})
+                                <i className={`fas ${isHmoPatient ? 'fa-shield-alt' : 'fa-x-ray'} mr-1`}></i>
+                                {isHmoPatient ? 'HMO Covered' : (currentPlanName || 'Plan Tariff')} ({coveredRadiologyTariffs.length})
                               </button>
                               <button
                                 type="button"
@@ -5424,14 +5480,14 @@ export default function DoctorConsultationModal({
                                   setRadiologyTariffMode('general');
                                   setSelectedRadiologyTariff(null);
                                 }}
-                                title="HMO doesn't cover scan? Switch to General Tariff: scan will carry label 'Pay from your purse'"
+                                title="Scan not covered by plan? Switch to General Tariff to pick (Pay from purse)"
                               >
                                 <i className="fas fa-wallet mr-1"></i> Not Covered? Switch to General Tariff &bull; Pay from your purse ({generalRadiologyTariffs.length})
                               </button>
                             </div>
                           ) : (
-                            <span className="badge badge-success px-2.5 py-1.5 font-weight-bold shadow-xs">
-                              <i className="fas fa-wallet mr-1"></i> Private Patient &bull; General Price ({generalRadiologyTariffs.length || coveredRadiologyTariffs.length})
+                            <span className="badge badge-secondary px-2.5 py-1.5 font-weight-bold shadow-xs">
+                              <i className="fas fa-wallet mr-1"></i> General Price ({generalRadiologyTariffs.length})
                             </span>
                           )}
                         </div>
@@ -5529,50 +5585,77 @@ export default function DoctorConsultationModal({
                                 <i className="fas fa-spinner fa-spin mr-1"></i> Loading radiology scans...
                               </div>
                             ) : filteredCoveredRadiology.length > 0 ? (
-                              filteredCoveredRadiology.map((rad, idx) => (
-                                <button
-                                  key={rad.id || idx}
-                                  type="button"
-                                  className={`dropdown-item py-2 px-3 border-bottom text-wrap d-flex justify-content-between align-items-center ${
-                                    selectedRadiologyIndex === idx ? 'text-white' : ''
-                                  }`}
-                                  style={{
-                                    cursor: 'pointer',
-                                    backgroundColor: selectedRadiologyIndex === idx ? '#7c3aed' : undefined,
-                                  }}
-                                  onClick={() => handleSelectCoveredRadiology(rad)}
-                                >
-                                  <div>
-                                    <div className="d-flex align-items-center">
-                                      <i className="fas fa-x-ray mr-2" style={{ color: selectedRadiologyIndex === idx ? '#fff' : '#7c3aed' }}></i>
-                                      <span className={`font-weight-bold ${selectedRadiologyIndex === idx ? 'text-white' : 'text-dark'}`}>
-                                        {rad.item}
+                              <>
+                                {filteredCoveredRadiology.map((rad, idx) => (
+                                  <button
+                                    key={rad.id || idx}
+                                    type="button"
+                                    className={`dropdown-item py-2 px-3 border-bottom text-wrap d-flex justify-content-between align-items-center ${
+                                      selectedRadiologyIndex === idx ? 'text-white' : ''
+                                    }`}
+                                    style={{
+                                      cursor: 'pointer',
+                                      backgroundColor: selectedRadiologyIndex === idx ? '#7c3aed' : undefined,
+                                    }}
+                                    onClick={() => handleSelectCoveredRadiology(rad)}
+                                  >
+                                    <div>
+                                      <div className="d-flex align-items-center">
+                                        <i className="fas fa-x-ray mr-2" style={{ color: selectedRadiologyIndex === idx ? '#fff' : '#7c3aed' }}></i>
+                                        <span className={`font-weight-bold ${selectedRadiologyIndex === idx ? 'text-white' : 'text-dark'}`}>
+                                          {rad.item}
+                                        </span>
+                                        {(radiologyTariffMode === 'general' || rad.is_general || (!rad.sponsor_id && !rad.plan_id)) && (
+                                          <span className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs" style={{ fontSize: '0.70rem' }}>
+                                            <i className="fas fa-wallet mr-1"></i> Pay from your purse
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className={`small ${selectedRadiologyIndex === idx ? 'text-white-50' : 'text-muted'}`}>
+                                        {rad.item_id && <span className="mr-2">Code: {rad.item_id}</span>}
+                                        {rad.plan_name && (
+                                          <span className={`badge ${selectedRadiologyIndex === idx ? 'badge-light text-dark' : 'badge-secondary'} mr-1`}>
+                                            {rad.plan_name}
+                                          </span>
+                                        )}
+                                        {rad.sponsor_name && (
+                                          <span className="small">{rad.sponsor_name}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="text-right ml-2 flex-shrink-0">
+                                      <span className={`badge ${selectedRadiologyIndex === idx ? 'badge-light text-success font-weight-bold' : 'badge-success'} px-2 py-1`}>
+                                        ₦{Number(rad.rate || 0).toLocaleString()}
                                       </span>
-                                      {(radiologyTariffMode === 'general' || rad.is_general || (!rad.sponsor_id && !rad.plan_id)) && (
-                                        <span className="badge badge-warning text-dark font-weight-bold ml-2 shadow-xs" style={{ fontSize: '0.70rem' }}>
-                                          <i className="fas fa-wallet mr-1"></i> Pay from your purse
-                                        </span>
-                                      )}
                                     </div>
-                                    <div className={`small ${selectedRadiologyIndex === idx ? 'text-white-50' : 'text-muted'}`}>
-                                      {rad.item_id && <span className="mr-2">Code: {rad.item_id}</span>}
-                                      {rad.plan_name && (
-                                        <span className={`badge ${selectedRadiologyIndex === idx ? 'badge-light text-dark' : 'badge-secondary'} mr-1`}>
-                                          {rad.plan_name}
-                                        </span>
+                                  </button>
+                                ))}
+
+                                {/* Quick Switch Button at bottom of dropdown for Sponsor patients */}
+                                {hasPlanOrSponsor && (
+                                  <div className="p-2 bg-light border-top text-center">
+                                    <button
+                                      type="button"
+                                      className="btn btn-link btn-sm p-0 font-weight-bold"
+                                      style={{ fontSize: '0.78rem', color: radiologyTariffMode === 'covered' ? '#b45309' : (isHmoPatient ? '#7c3aed' : '#059669') }}
+                                      onClick={() => {
+                                        setRadiologyTariffMode(radiologyTariffMode === 'covered' ? 'general' : 'covered');
+                                        setShowRadiologyDropdown(true);
+                                      }}
+                                    >
+                                      {radiologyTariffMode === 'covered' ? (
+                                        <>
+                                          <i className="fas fa-exchange-alt mr-1"></i> Scan not covered? Switch to <strong>General Tariff (Pay from your purse)</strong>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <i className="fas fa-exchange-alt mr-1"></i> Switch back to <strong>{isHmoPatient ? 'HMO Covered' : 'Plan Tariff'} ({currentPlanName || currentSponsorName})</strong>
+                                        </>
                                       )}
-                                      {rad.sponsor_name && (
-                                        <span className="small">{rad.sponsor_name}</span>
-                                      )}
-                                    </div>
+                                    </button>
                                   </div>
-                                  <div className="text-right ml-2 flex-shrink-0">
-                                    <span className={`badge ${selectedRadiologyIndex === idx ? 'badge-light text-success font-weight-bold' : 'badge-success'} px-2 py-1`}>
-                                      ₦{Number(rad.rate || 0).toLocaleString()}
-                                    </span>
-                                  </div>
-                                </button>
-                              ))
+                                )}
+                              </>
                             ) : (
                               <div className="p-3 text-center">
                                 <div className="text-muted small mb-2">
@@ -5617,7 +5700,7 @@ export default function DoctorConsultationModal({
                             </span>
                           ) : (
                             <span className="badge badge-success px-2.5 py-1 font-weight-bold shadow-xs mr-2">
-                              <i className="fas fa-shield-alt mr-1"></i> HMO Covered &bull; ₦{Number(selectedRadiologyTariff.rate || 0).toLocaleString()} ({selectedRadiologyTariff.plan_name || 'Covered Plan'})
+                              <i className={`fas ${isHmoPatient ? 'fa-shield-alt' : 'fa-x-ray'} mr-1`}></i> {isHmoPatient ? 'HMO Covered' : (selectedRadiologyTariff.plan_name || 'Plan Covered')} &bull; ₦{Number(selectedRadiologyTariff.rate || 0).toLocaleString()}
                             </span>
                           )}
                           <span className="text-dark font-weight-bold">

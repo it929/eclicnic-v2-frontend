@@ -3,22 +3,22 @@
  */
 
 export const DEPARTMENT_LIST = [
-  { key: 'frontdesk', label: '🏥 Front Desk', icon: 'fa-hospital-user', defaultTab: 'patients' },
-  { key: 'admin', label: '🛡️ Hospital Admin', icon: 'fa-user-shield', defaultTab: 'dashboard' },
-  { key: 'cmd', label: '🩺 Chief Medical Director', icon: 'fa-user-md', defaultTab: 'dashboard' },
-  { key: 'nursing', label: '💉 Nursing', icon: 'fa-user-nurse', defaultTab: 'queues' },
-  { key: 'clinical', label: '👨‍⚕️ Clinical', icon: 'fa-user-md', defaultTab: 'queues' },
-  { key: 'inventory', label: '📦 Inventory', icon: 'fa-boxes', defaultTab: 'inventory' },
-  { key: 'ipd1', label: '💊 IPD Pharmacy 1', icon: 'fa-pills', defaultTab: 'ipd' },
-  { key: 'ipd2', label: '💊 IPD Pharmacy 2', icon: 'fa-pills', defaultTab: 'ipd' },
-  { key: 'ipd3', label: '💊 IPD Pharmacy 3', icon: 'fa-pills', defaultTab: 'ipd' },
-  { key: 'opd1', label: '💊 OPD Pharmacy 1', icon: 'fa-capsules', defaultTab: 'pharmacy' },
-  { key: 'opd2', label: '💊 OPD Pharmacy 2', icon: 'fa-capsules', defaultTab: 'pharmacy' },
-  { key: 'laboratory', label: '🔬 Laboratory', icon: 'fa-flask', defaultTab: 'radiolab' },
-  { key: 'radiology', label: '📡 Radiology', icon: 'fa-x-ray', defaultTab: 'radiology' },
-  { key: 'billings', label: '💰 Billings Unit', icon: 'fa-money-bill-wave', defaultTab: 'billings' },
-  { key: 'reporting', label: '📈 Reporting Unit', icon: 'fa-chart-line', defaultTab: 'reporting' },
-  { key: 'monitor', label: '🖥️ Monitor', icon: 'fa-desktop', defaultTab: 'queues' },
+  { key: 'frontdesk', label: '🏥 Front Desk', icon: 'fa-hospital-user', defaultTab: 'patients', defaultSubTab: 'all', defaultRoute: '/patients/all' },
+  { key: 'admin', label: '🛡️ Hospital Admin', icon: 'fa-user-shield', defaultTab: 'dashboard', defaultSubTab: null, defaultRoute: '/dashboard' },
+  { key: 'cmd', label: '🩺 Chief Medical Director', icon: 'fa-user-md', defaultTab: 'dashboard', defaultSubTab: null, defaultRoute: '/dashboard' },
+  { key: 'nursing', label: '💉 Nursing', icon: 'fa-user-nurse', defaultTab: 'appointments', defaultSubTab: 'today', defaultRoute: '/appointments/today' },
+  { key: 'clinical', label: '👨‍⚕️ Clinical', icon: 'fa-user-md', defaultTab: 'appointments', defaultSubTab: 'today', defaultRoute: '/appointments/today' },
+  { key: 'inventory', label: '📦 Inventory', icon: 'fa-boxes', defaultTab: 'inventory', defaultSubTab: 'catalog', defaultRoute: '/inventory/catalog' },
+  { key: 'ipd1', label: '💊 IPD Pharmacy 1', icon: 'fa-pills', defaultTab: 'ipd', defaultSubTab: 'beds', defaultRoute: '/ipd/beds' },
+  { key: 'ipd2', label: '💊 IPD Pharmacy 2', icon: 'fa-pills', defaultTab: 'ipd', defaultSubTab: 'beds', defaultRoute: '/ipd/beds' },
+  { key: 'ipd3', label: '💊 IPD Pharmacy 3', icon: 'fa-pills', defaultTab: 'ipd', defaultSubTab: 'beds', defaultRoute: '/ipd/beds' },
+  { key: 'opd1', label: '💊 OPD Pharmacy 1', icon: 'fa-capsules', defaultTab: 'pharmacy', defaultSubTab: 'opd', defaultRoute: '/pharmacy/opd' },
+  { key: 'opd2', label: '💊 OPD Pharmacy 2', icon: 'fa-capsules', defaultTab: 'pharmacy', defaultSubTab: 'opd', defaultRoute: '/pharmacy/opd' },
+  { key: 'laboratory', label: '🔬 Laboratory', icon: 'fa-flask', defaultTab: 'radiolab', defaultSubTab: 'lab', defaultRoute: '/radiolab/lab' },
+  { key: 'radiology', label: '📡 Radiology', icon: 'fa-x-ray', defaultTab: 'radiology', defaultSubTab: 'radiology', defaultRoute: '/radiolab/radiology' },
+  { key: 'billings', label: '💰 Billings Unit', icon: 'fa-money-bill-wave', defaultTab: 'billings', defaultSubTab: 'unprocessed', defaultRoute: '/billings/unprocessed' },
+  { key: 'reporting', label: '📈 Reporting Unit', icon: 'fa-chart-line', defaultTab: 'reporting', defaultSubTab: 'ambulatory', defaultRoute: '/reporting/ambulatory' },
+  { key: 'monitor', label: '🖥️ Monitor', icon: 'fa-desktop', defaultTab: 'queues', defaultSubTab: 'waiting_list', defaultRoute: '/queues/waiting' },
 ];
 
 /**
@@ -218,23 +218,75 @@ export function isModuleAllowed(moduleId, assignedModules, userRole) {
 }
 
 /**
- * Returns the default active workspace tab for a given department key.
+ * Returns the full landing route configuration for a given department key.
+ * Used for both user login routing and admin switch-department landing.
  */
-export function getDefaultTabForDepartment(deptKey, userRole = null) {
+export function getDepartmentLanding(deptKey, userRole = null) {
   const normKey = normalizeDepartmentKey(deptKey);
 
-  // Front Desk ALWAYS routes to All Registered Patients Directory
+  // 1. Front Desk -> patients/all
   if (normKey === 'frontdesk') {
-    return 'patients';
+    return {
+      tab: 'patients',
+      subTab: 'all',
+      subSubTab: null,
+      route: '/patients/all',
+    };
   }
 
-  // Admin or CMD defaults to dashboard
+  // 2. Nursing & Clinical -> appointments/today
+  if (normKey === 'nursing' || normKey === 'clinical') {
+    return {
+      tab: 'appointments',
+      subTab: 'today',
+      subSubTab: null,
+      route: '/appointments/today',
+    };
+  }
+
+  // 3. Billings Unit -> billings/unprocessed
+  if (normKey === 'billings') {
+    return {
+      tab: 'billings',
+      subTab: 'unprocessed',
+      subSubTab: null,
+      route: '/billings/unprocessed',
+    };
+  }
+
+  // 4. Hospital Admin or CMD -> dashboard
   if (normKey === 'admin' || normKey === 'cmd') {
-    return 'dashboard';
+    return {
+      tab: 'dashboard',
+      subTab: null,
+      subSubTab: null,
+      route: '/dashboard',
+    };
   }
 
   const item = DEPARTMENT_LIST.find((d) => d.key === normKey);
-  return item?.defaultTab || 'dashboard';
+  if (item) {
+    return {
+      tab: item.defaultTab || 'dashboard',
+      subTab: item.defaultSubTab || null,
+      subSubTab: null,
+      route: item.defaultRoute || (item.defaultTab ? `/${item.defaultTab}` : '/dashboard'),
+    };
+  }
+
+  return {
+    tab: 'dashboard',
+    subTab: null,
+    subSubTab: null,
+    route: '/dashboard',
+  };
+}
+
+/**
+ * Returns the default active workspace tab for a given department key.
+ */
+export function getDefaultTabForDepartment(deptKey, userRole = null) {
+  return getDepartmentLanding(deptKey, userRole).tab;
 }
 
 /**

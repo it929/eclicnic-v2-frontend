@@ -167,9 +167,24 @@ export const api = {
     return res.data;
   },
 
-  async getCategories() {
-    const res = await client.get('/patient-categories/');
+  async getCategories(params = {}) {
+    const res = await client.get('/patient-categories/', { params });
     return res.data?.results || res.data;
+  },
+
+  async createCategory(data) {
+    const res = await client.post('/patient-categories/', data);
+    return res.data;
+  },
+
+  async updateCategory(id, data) {
+    const res = await client.patch(`/patient-categories/${id}/`, data);
+    return res.data;
+  },
+
+  async deleteCategory(id) {
+    const res = await client.delete(`/patient-categories/${id}/`);
+    return res.data;
   },
 
   // ==========================================
