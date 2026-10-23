@@ -6974,12 +6974,28 @@ export default function TariffPlansView({
         <div
           className="modal fade show d-block"
           tabIndex="-1"
-          style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1060 }}
+          style={{
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            zIndex: 1060,
+            overflowY: 'auto',
+          }}
         >
-          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '620px', margin: '1.75rem auto' }}>
-            <div className="modal-content shadow-lg border-0" style={{ borderRadius: '14px', overflow: 'hidden' }}>
+          <div
+            className="modal-dialog modal-dialog-centered modal-dialog-scrollable"
+            style={{ maxWidth: '620px', margin: '1.75rem auto' }}
+          >
+            <div
+              className="modal-content shadow-2xl border-0"
+              style={{
+                borderRadius: '16px',
+                overflow: 'hidden',
+                maxHeight: 'calc(100vh - 3.5rem)',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
               <div
-                className="modal-header py-3 px-4 align-items-center text-white"
+                className="modal-header py-3 px-4 align-items-center text-white border-0 flex-shrink-0"
                 style={{
                   background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
                 }}
@@ -7008,21 +7024,24 @@ export default function TariffPlansView({
                 </button>
               </div>
 
-              <div className="modal-body p-4">
+              <div
+                className="modal-body p-4 flex-grow-1"
+                style={{ overflowY: 'auto' }}
+              >
                 {/* Download Template Banner */}
                 <div
-                  className="p-3 mb-3 d-flex align-items-center justify-content-between rounded border"
-                  style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}
+                  className="p-3 mb-3 d-flex flex-wrap align-items-center justify-content-between rounded shadow-xs"
+                  style={{ backgroundColor: '#f0fdf4', border: '1px solid #86efac' }}
                 >
-                  <div className="d-flex align-items-center">
+                  <div className="d-flex align-items-center mb-2 mb-sm-0">
                     <div
-                      className="rounded-circle d-flex align-items-center justify-content-center mr-3"
-                      style={{ width: '40px', height: '40px', backgroundColor: '#dcfce7', color: '#16a34a' }}
+                      className="rounded-circle d-flex align-items-center justify-content-center mr-3 flex-shrink-0"
+                      style={{ width: '42px', height: '42px', backgroundColor: '#dcfce7', color: '#16a34a' }}
                     >
                       <i className="fas fa-file-excel fa-lg"></i>
                     </div>
                     <div>
-                      <div className="font-weight-bold text-dark" style={{ fontSize: '0.90rem' }}>
+                      <div className="font-weight-bold text-dark" style={{ fontSize: '0.92rem' }}>
                         Need the official template?
                       </div>
                       <div className="text-muted small">
@@ -7032,7 +7051,7 @@ export default function TariffPlansView({
                   </div>
                   <button
                     type="button"
-                    className="btn btn-sm btn-success font-weight-bold shadow-xs px-3 text-nowrap"
+                    className="btn btn-sm btn-success font-weight-bold shadow-sm px-3 text-nowrap"
                     onClick={handleDownloadSponsorTemplate}
                     disabled={downloadingSponsorTemplate}
                     style={{ borderRadius: '6px' }}
@@ -7044,13 +7063,15 @@ export default function TariffPlansView({
 
                 {/* Default Category selector */}
                 <div className="form-group mb-3">
-                  <label className="font-weight-bold text-dark small mb-1">
-                    Default Category (for rows without Category column)
+                  <label className="font-weight-bold text-dark small mb-1 d-flex justify-content-between">
+                    <span>Default Category</span>
+                    <span className="text-muted font-weight-normal">(used if row has no category)</span>
                   </label>
                   <select
                     className="custom-select custom-select-sm"
                     value={sponsorUploadCategory}
                     onChange={(e) => setSponsorUploadCategory(e.target.value)}
+                    style={{ borderRadius: '6px' }}
                   >
                     <option value="">HMO (Default)</option>
                     {categories.map((c) => (
@@ -7060,12 +7081,12 @@ export default function TariffPlansView({
                     ))}
                   </select>
                   <small className="form-text text-muted">
-                    If your file has a <code>Category</code> column, the category from the file will be used automatically.
+                    If your file has a <code>Category</code> column, each row's category will be used automatically.
                   </small>
                 </div>
 
                 {/* File Dropzone */}
-                <div className="form-group mb-3">
+                <div className="form-group mb-2">
                   <label className="font-weight-bold text-dark small mb-1">
                     Select File to Upload (.xlsx, .xls, .csv)
                   </label>
@@ -7083,10 +7104,10 @@ export default function TariffPlansView({
                       }
                     }}
                     style={{
-                      border: sponsorDragOver ? '2px dashed #2563eb' : '2px dashed #cbd5e1',
-                      borderRadius: '10px',
+                      border: sponsorDragOver ? '2px dashed #2563eb' : '2px dashed #94a3b8',
+                      borderRadius: '12px',
                       backgroundColor: sponsorDragOver ? '#eff6ff' : '#f8fafc',
-                      padding: '24px 16px',
+                      padding: '20px 16px',
                       textAlign: 'center',
                       transition: 'all 0.2s ease',
                       cursor: 'pointer',
@@ -7106,19 +7127,57 @@ export default function TariffPlansView({
                     />
                     {sponsorUploadFile ? (
                       <div>
-                        <i className="fas fa-file-excel fa-3x text-success mb-2"></i>
-                        <h6 className="font-weight-bold text-dark mb-1">{sponsorUploadFile.name}</h6>
-                        <span className="badge badge-primary px-2 py-1">
-                          {(sponsorUploadFile.size / 1024).toFixed(1)} KB
-                        </span>
-                        <div className="mt-2">
+                        <div
+                          className="d-inline-flex align-items-center justify-content-center rounded-circle mb-2"
+                          style={{ width: '56px', height: '56px', backgroundColor: '#dcfce7', color: '#16a34a' }}
+                        >
+                          <i className="fas fa-file-excel fa-2x"></i>
+                        </div>
+                        <h6 className="font-weight-bold text-dark mb-1" style={{ wordBreak: 'break-all' }}>
+                          {sponsorUploadFile.name}
+                        </h6>
+                        <div className="d-flex align-items-center justify-content-center gap-2 mb-3">
+                          <span className="badge badge-primary px-2 py-1 mr-2">
+                            {(sponsorUploadFile.size / 1024).toFixed(1)} KB
+                          </span>
+                          <span className="badge badge-success px-2 py-1">Ready to upload</span>
+                        </div>
+
+                        {/* High-visibility Action Button directly inside Card */}
+                        <div className="d-flex justify-content-center gap-2 flex-wrap">
                           <button
                             type="button"
-                            className="btn btn-xs btn-outline-danger font-weight-bold"
+                            className="btn btn-sm btn-primary font-weight-bold px-3 shadow-sm mr-2"
+                            style={{
+                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              borderColor: '#047857',
+                              borderRadius: '6px',
+                            }}
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              executeImportFromExcel();
+                            }}
+                            disabled={importingSponsors}
+                          >
+                            {importingSponsors ? (
+                              <>
+                                <i className="fas fa-spinner fa-spin mr-1"></i> Uploading...
+                              </>
+                            ) : (
+                              <>
+                                <i className="fas fa-upload mr-1"></i> Click to Upload This File Now
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger font-weight-bold"
+                            style={{ borderRadius: '6px' }}
                             onClick={(ev) => {
                               ev.stopPropagation();
                               setSponsorUploadFile(null);
                             }}
+                            disabled={importingSponsors}
                           >
                             <i className="fas fa-times mr-1"></i> Remove File
                           </button>
@@ -7126,7 +7185,12 @@ export default function TariffPlansView({
                       </div>
                     ) : (
                       <div>
-                        <i className="fas fa-cloud-upload-alt fa-3x text-muted mb-2"></i>
+                        <div
+                          className="d-inline-flex align-items-center justify-content-center rounded-circle mb-2"
+                          style={{ width: '56px', height: '56px', backgroundColor: '#e2e8f0', color: '#64748b' }}
+                        >
+                          <i className="fas fa-cloud-upload-alt fa-2x"></i>
+                        </div>
                         <div className="font-weight-bold text-dark mb-1">
                           Click to browse or drag and drop your spreadsheet here
                         </div>
@@ -7140,19 +7204,30 @@ export default function TariffPlansView({
 
                 {/* Default Server Sync Note if no file selected */}
                 {!sponsorUploadFile && (
-                  <div className="alert alert-light border small text-muted mb-0 d-flex align-items-center">
-                    <i className="fas fa-info-circle text-info mr-2 fa-lg"></i>
+                  <div className="alert alert-light border small text-muted mb-0 d-flex align-items-center mt-3">
+                    <i className="fas fa-info-circle text-info mr-2 fa-lg flex-shrink-0"></i>
                     <span>
-                      If no file is selected, clicking <strong>"Upload Sponsors"</strong> will automatically synchronize all 64 HMO sponsors from the default <strong>Sponsor.xlsx</strong> file on the server.
+                      If no file is selected, clicking <strong>"Sync Default Sponsors"</strong> will automatically synchronize all 64 HMO sponsors from <strong>Sponsor.xlsx</strong> on the server.
                     </span>
                   </div>
                 )}
               </div>
 
-              <div className="modal-footer bg-light py-2 px-4 d-flex justify-content-between border-top">
+              {/* Sticky Fixed Bottom Footer */}
+              <div
+                className="modal-footer bg-light py-3 px-4 d-flex justify-content-between border-top flex-shrink-0"
+                style={{
+                  position: 'sticky',
+                  bottom: 0,
+                  zIndex: 10,
+                  backgroundColor: '#f8fafc',
+                  borderTop: '1px solid #e2e8f0',
+                }}
+              >
                 <button
                   type="button"
                   className="btn btn-outline-secondary font-weight-bold px-3"
+                  style={{ borderRadius: '6px' }}
                   onClick={() => {
                     setSyncExcelModalOpen(false);
                     setSponsorUploadFile(null);
@@ -7167,8 +7242,14 @@ export default function TariffPlansView({
                   onClick={executeImportFromExcel}
                   disabled={importingSponsors}
                   style={{
-                    background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
-                    borderColor: '#1d4ed8',
+                    background: sponsorUploadFile
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+                    borderColor: sponsorUploadFile ? '#047857' : '#1d4ed8',
+                    borderRadius: '6px',
+                    fontSize: '0.92rem',
+                    paddingTop: '8px',
+                    paddingBottom: '8px',
                   }}
                 >
                   {importingSponsors ? (
@@ -7177,8 +7258,8 @@ export default function TariffPlansView({
                     </>
                   ) : (
                     <>
-                      <i className="fas fa-check-circle mr-1"></i>{' '}
-                      {sponsorUploadFile ? 'Upload Sponsors' : 'Sync Sponsor.xlsx'}
+                      <i className={`fas ${sponsorUploadFile ? 'fa-upload' : 'fa-sync-alt'} mr-1`}></i>{' '}
+                      {sponsorUploadFile ? 'Upload Sponsors' : 'Sync Default Sponsors'}
                     </>
                   )}
                 </button>
